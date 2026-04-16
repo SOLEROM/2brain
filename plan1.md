@@ -1,3 +1,4 @@
+<!-- /autoplan restore point: /home/user/.gstack/projects/SOLEROM-2brain/main-autoplan-restore-20260416-144132.md -->
 # 2brain Designs
 
 | Area                | Decision                                     |
@@ -869,4 +870,170 @@ That would immediately produce valuable candidate pages for your benchmark syste
 # 18. Final Refined One-Liner
 
 **2brain is a file-based, multi-domain, human-approved AI wiki where raw sources are digested into whole Markdown candidate pages, reviewed through a lightweight web UI, promoted into approved knowledge trees, and continuously improved by deep-research agents with visible confidence and inline contradictions.**
+
+---
+
+# /autoplan Review Findings
+
+## Cross-Phase Themes
+
+**Theme: "The spec describes WHAT but not HOW for operational/developer concerns"**
+Flagged in CEO Phase (curation fatigue, no success metrics), Eng Phase (atomic writes, job stale lock, schema validator), and DX Phase (no init script, undefined config files). All three independent subagents converged on this. High-confidence signal. Fix: before writing a line of code, fill the operational gaps in CLAUDE.md and plan1.md.
+
+## Decision Audit Trail
+
+| # | Phase | Decision | Classification | Principle | Rationale | Rejected |
+|---|-------|----------|---------------|-----------|-----------|---------|
+| 1 | CEO | Use Approach C: CC agents + minimal web server UI | Mechanical | P5 | Matches spec, least abstraction | Approach A (no UI), B (too much infra) |
+| 2 | CEO | Include all 4 test layers (unit/integration/e2e/regression) | Mechanical | P1 | Completeness — all layers needed | None |
+| 3 | CEO | Scheduled jobs deferred to TODOS.md | Mechanical | P2 | Outside MVP blast radius | None |
+| 4 | CEO | Add confidence calibration rubric to schema.md | Mechanical | P1 | 10-line addition, prevents useless scores | None |
+| 5 | CEO | Add candidate aging config + lint rule (MVP) | Mechanical | P1 | Prevents curation backlog rot | None |
+| 6 | CEO | Competitive analysis → nice-to-have in plan doc, not blocking MVP | Mechanical | P3 | Not blocking implementation | None |
+
+## CEO Phase Findings
+
+### Critical Gaps
+1. **Curation fatigue** (Critical) — No mechanism for review queue pressure management. Fix: `max_candidate_age_days` in domain.yaml + lint rule to auto-archive stale candidates. **[ADDED TO MVP]**
+2. **Confidence calibration** (High) — Scale defined, algorithm undefined. Fix: add explicit rubric to schema.md specifying how agents assign scores. **[ADDED TO MVP]**
+3. **Wikilink validation at approval** (High) — When a candidate is approved, broken wikilinks are not checked. Fix: approval step should validate all `[[links]]` resolve to existing files.
+4. **Timestamp collision in raw IDs** (Medium) — Two ingests in the same minute produce identical HHMM prefix. Fix: use HHMMSS or add counter suffix.
+5. **index.md drift** (Medium) — No repair command if index.md gets out of sync. Fix: lint should detect and report orphaned/missing index entries.
+
+### NOT in Scope (MVP)
+- Scheduled background jobs (cron/Celery)
+- Multi-user team permissions
+- Claim-level database
+- Browser extension
+- Competitive analysis document
+- Query analytics log
+
+## Eng Phase Findings
+
+### Architecture Concerns
+1. **Flat-file concurrency (Critical)** — index.md + log.md need atomic write-then-rename pattern. Two concurrent operations silently corrupt.
+2. **Frontmatter schema validator (Critical)** — LLM agent output must be validated before writing to pending/. Required fields, confidence range [0,1], status values.
+3. **Path traversal in target_path (Critical/Security)** — Must validate target_path is within domains/<domain>/ before any file operation.
+4. **Content sanitization on ingest (High/Security)** — Raw source content with YAML frontmatter delimiters must be escaped.
+5. **jobs/running stale lock (High)** — Add heartbeat_at field + lint rule for >10min stale jobs.
+6. **Web UI process model (High)** — job YAML as handoff, UI polls for job status. Must be explicitly specified.
+7. **index.md O(n) at scale (Medium)** — append-only format or bulk regeneration via lint.
+8. **merge operation (Medium)** — entirely manual with no tooling. TASTE DECISION #2 (see gate).
+
+### Security Threat Model
+| Threat | Vector | Fix |
+|--------|--------|-----|
+| Path traversal | target_path frontmatter field | Validate within domains/<domain>/ |
+| Frontmatter injection | Raw source fetch content | Sanitize --- delimiters on ingest |
+| Status spoofing | Raw content with status: approved | Never trust status from raw sources |
+
+### Test Plan
+Full test plan written to: `~/.gstack/projects/SOLEROM-2brain/main-test-plan-20260416.md`
+Covers: unit (slug, frontmatter, log, contradiction scanner), integration (ingest, digest, lint), E2E (approval flow, web UI), security (path traversal, injection).
+
+### TASTE DECISION #2: `merge` operation in MVP
+- Option A: Keep `merge` as fully manual (reviewer edits target page directly) — no tooling, no diff
+- Option B: Scope `merge` out of MVP entirely — only support create/update/replace/archive/reject at MVP
+Surfacing at final gate.
+
+## Design Phase Findings
+
+### Design Scores (pre-review)
+| Dimension | Score | Finding |
+|-----------|-------|---------|
+| Information hierarchy | 3/10 | Confidence/operation type buried in right panel — move to sticky banner |
+| Interaction states | 2/10 | Zero states defined (empty queue, loading, error, partial, post-action) |
+| User journey | 4/10 | No sticky action bar, no queue position indicator, no keyboard shortcuts |
+| Component specificity | 3/10 | No wireframe, editor undefined, no color convention for badges |
+| Edit & Approve workflow | 2/10 | Multi-state workflow undefined — edit/save/approve/lose-edit paths all missing |
+| Query UI | 1/10 | Query input interaction pattern entirely absent from spec |
+| Overall | 3/10 | Section 11 is the most underspecified section in the plan |
+
+### Design Critical Gaps (all auto-added to implementation scope)
+1. **Edit & Approve workflow state machine** (Critical) — at least 4 states unspecified. Must define: edit-then-approve, edit-then-close, auto-save, lost-edit recovery.
+2. **Interaction states** (Critical for loading/error) — add UI states table: empty queue, job-in-progress, approval-error, post-approval, partial-candidate, empty-query.
+3. **Sticky action bar** (High) — action buttons must be always-visible, not at bottom of long pages.
+4. **Queue position indicator** (High) — "3 of 12 pending" is required for batch review.
+5. **Keyboard shortcuts** (High) — `A`=approve, `R`=reject, `E`=edit minimum.
+6. **ASCII wireframe for review screen** (High) — implementer needs this.
+7. **Regenerate behavior** (High) — specify: new candidate created + old archived, UI shows job-in-progress, then auto-advances.
+8. **Status badge color convention** (Medium) — TASTE DECISION #1 (see gate).
+
+### TASTE DECISION #1: Status Badge Colors
+Status badge color scheme for Approved/Candidate/Rejected/Archived/Superseded.
+Options: (A) Semantic — green/yellow/red/gray/gray | (B) Neutral — all gray with text labels only
+Surfacing at final gate.
+
+## DX Phase Findings
+
+### DX Scorecard
+| Dimension | Pre-Review | Target | Fix |
+|-----------|-----------|--------|-----|
+| Getting started (TTHW) | 2/10 (45-90 min) | 8/10 (<15 min) | init-domain.sh script + quickstart |
+| Config ergonomics | 3/10 | 8/10 | Canonical domain.yaml example in CLAUDE.md |
+| Error handling | 3/10 | 7/10 | failed/partial frontmatter examples |
+| Documentation navigation | 5/10 | 8/10 | Common-tasks section |
+| Extension points | 4/10 | 7/10 | custom_types + extra_frontmatter_fields |
+| Spec consistency | 3/10 | 9/10 | Consolidate domain.yaml (CLAUDE.md vs plan1.md conflict) |
+| **Overall** | **3/10** | **8/10** | All fixable before first commit |
+
+### DX Critical Gaps
+1. **No getting-started path** (Critical) — TTHW 45+ min. No init script, no quickstart. Fix: `scripts/init-domain.sh <name>` + "Getting Started in 5 steps" at top of CLAUDE.md.
+2. **domain.yaml schema conflict** (High) — CLAUDE.md shows only `web_research` stanza; plan1.md section 12.1 shows different fields. Neither is authoritative. Fix: define one canonical full `domain.yaml` in CLAUDE.md.
+3. **app.yaml + agents.yaml undefined** (High) — Referenced in file layout, never specified. Fix: add complete examples with all fields.
+4. **No error surface for malformed agent output** (High) — What does a `status: partial` candidate look like? What does `jobs/failed/job_*.yaml` with `error:` field look like? Fix: add one example of each.
+5. **`source_paths` undefined** (Medium) — `split` operation references this field but it's not in the frontmatter spec.
+
+### DX Developer Journey
+| Stage | Current | Gap |
+|-------|---------|-----|
+| 0. Discover | README (empty) | No value prop on first screen |
+| 1. Clone + setup | No instructions | init-domain.sh needed |
+| 2. First ingest | Must hand-craft raw/ folder | init script should scaffold |
+| 3. First digest | "Tell Claude to digest" — how? | Quickstart must show exact prompt |
+| 4. First review | Web UI undefined | Port? Auto-start? |
+| 5. First approval | Works once you figure out the UI | |
+| 6. First query | Works | |
+| 7. Add second domain | Not documented | Common-tasks needed |
+| 8. Run lint | Not documented | Common-tasks needed |
+| 9. Troubleshoot | No error messages | |
+
+### What Already Exists
+- CLAUDE.md — extremely detailed agent operating manual, doubles as schema for edge-ai domain seed
+- plan1.md — comprehensive spec covering all MVP features
+- Git repo initialized and ready
+
+### Taste Decision Resolutions
+- **Taste 1 (Badge colors):** Semantic colors — Approved=green, Candidate=yellow, Rejected=red, Archived/Superseded=gray
+- **Taste 2 (merge in MVP):** Keep merge in MVP as fully manual (user preference — no tooling required)
+
+---
+
+## GSTACK REVIEW REPORT
+
+| Review | Via | Status | Runs | Critical Gaps | Unresolved |
+|--------|-----|--------|------|--------------|------------|
+| CEO Review | /autoplan | issues_open | 1 | 2 | 3 |
+| Design Review | /autoplan | issues_open | 1 | 0 | 3 |
+| Eng Review | /autoplan | issues_open | 1 | 3 | 5 |
+| DX Review | /autoplan | issues_open | 1 | 1 | 4 |
+| Voices (CEO) | subagent-only | issues_open | 1 | — | confirmed: 2/6 |
+| Voices (Design) | subagent-only | issues_open | 1 | — | confirmed: 0/7 |
+| Voices (Eng) | subagent-only | issues_open | 1 | — | confirmed: 2/6 |
+| Voices (DX) | subagent-only | issues_open | 1 | — | confirmed: 1/6 |
+
+**VERDICT:** APPROVED with 23 auto-decisions. 6 critical gaps identified across eng/DX (all actionable pre-code). Run `/ship` when ready to implement.
+
+### Top 5 Pre-Implementation Actions (before writing code)
+1. Consolidate `domain.yaml` to one canonical full example in CLAUDE.md — removes the CLAUDE.md vs plan1.md conflict
+2. Add `config/app.yaml` and `config/agents.yaml` examples — currently referenced but undefined
+3. Add `scripts/init-domain.sh <name>` script — TTHW blocker
+4. Add "Getting Started" quickstart at top of CLAUDE.md — 5-step flow: clone → init domain → ingest source → digest → review
+5. Add ASCII wireframe for Section 11 (review UI) + UI states table — design implementation will diverge without it
+
+### Top 3 Implementation-Time Guards (must not ship without)
+1. **Frontmatter schema validator** — validates agent output before writing to `pending/`
+2. **Path traversal validation** — `target_path` must be within `domains/<domain>/`
+3. **Atomic write (tmp→rename)** for `index.md` and `log.md`
+
 
