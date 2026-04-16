@@ -1,0 +1,1 @@
+read the src from: https://academy.dair.ai/blog/llm-knowledge-bases-karpathy?fbclid=IwY2xjawRNxURleHRuA2FlbQIxMABicmlkETFjMVNMRjFTRTFhTlpVSlVTc3J0YwZhcHBfaWQQMjIyMDM5MTc4ODIwMDg5MgABHiKsq8uygJWHLF_cmjbipeFnnTCH8ueKfr6SgnyGXU_o5t8NzZUlkRuuiLy__aem_L71A1-svTbZLh44wnoG5qg
