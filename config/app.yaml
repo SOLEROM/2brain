@@ -1,0 +1,16 @@
+version: "1"
+repo_root: "."
+web_ui:
+  host: "127.0.0.1"
+  port: 5000
+  auto_open_browser: false
+default_domain: edge-ai
+audit:
+  enabled: true
+  log_queries: false
+badge_colors:
+  approved: green
+  candidate: yellow
+  rejected: red
+  archived: gray
+  superseded: gray

@@ -1,0 +1,36 @@
+version: "1"
+digest_agent:
+  model: claude-sonnet-4-6
+  max_candidates_per_source: 5
+  validate_frontmatter: true
+  check_near_duplicates: true
+deep_research_agent:
+  model: claude-opus-4-6
+  max_sources_per_job: 20
+  include_candidates: true
+source_discovery_agent:
+  enabled: true
+  max_suggestions_per_run: 10
+frontmatter_validation:
+  required_fields:
+    - title
+    - domain
+    - type
+    - status
+    - confidence
+    - sources
+    - created_at
+    - updated_at
+    - tags
+  confidence_range: [0.0, 1.0]
+  valid_statuses: [candidate, approved, rejected, archived, superseded, partial]
+  valid_types:
+    - source-summary
+    - concept
+    - entity
+    - topic
+    - comparison
+    - research-report
+    - deep-research-report
+    - contradiction-note
+    - question-answer

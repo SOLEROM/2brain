@@ -1,0 +1,10 @@
+fastapi==0.115.0
+uvicorn==0.30.6
+anthropic>=0.34.0
+pydantic==2.8.2
+aiofiles==23.2.1
+python-multipart==0.0.9
+PyYAML==6.0.1
+Jinja2==3.1.2
+pytest==9.0.2
+httpx==0.28.1
