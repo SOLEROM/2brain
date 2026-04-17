@@ -24,3 +24,7 @@ def create_app(repo_root: Path = Path(".")) -> FastAPI:
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     return app
+
+
+def get_app() -> FastAPI:
+    return create_app(Path("."))
