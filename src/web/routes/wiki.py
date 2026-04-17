@@ -28,6 +28,6 @@ async def wiki_browse(request: Request, domain: str):
                     "confidence": fm.get("confidence", 0.0),
                     "confidence_label": confidence_label(float(fm.get("confidence", 0.0))),
                 })
-    return templates.TemplateResponse("wiki_browse.html", {
-        "request": request, "domain": domain, "pages": pages
+    return templates.TemplateResponse(request, "wiki_browse.html", {
+        "domain": domain, "pages": pages
     })

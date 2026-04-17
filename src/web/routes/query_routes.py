@@ -23,6 +23,6 @@ async def query_page(request: Request, domain: str, q: str = ""):
                 "snippet": m.snippet,
                 "type": m.type,
             })
-    return templates.TemplateResponse("query.html", {
-        "request": request, "domain": domain, "query": q, "results": results
+    return templates.TemplateResponse(request, "query.html", {
+        "domain": domain, "query": q, "results": results
     })

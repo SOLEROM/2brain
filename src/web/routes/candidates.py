@@ -27,8 +27,8 @@ async def candidates_list(request: Request, domain: str):
             "operation": fm.get("candidate_operation", "create"),
             "tags": fm.get("tags", []),
         })
-    return templates.TemplateResponse("candidates_list.html", {
-        "request": request, "domain": domain, "items": items
+    return templates.TemplateResponse(request, "candidates_list.html", {
+        "domain": domain, "items": items
     })
 
 
@@ -39,8 +39,7 @@ async def candidate_review(request: Request, domain: str, filename: str):
     path = repo_root / "candidates" / domain / "pending" / filename
     fm, body = parse_frontmatter(path)
     rendered_body = markdown.markdown(body, extensions=["tables", "fenced_code"])
-    return templates.TemplateResponse("candidate_review.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "candidate_review.html", {
         "domain": domain,
         "filename": filename,
         "fm": fm,
