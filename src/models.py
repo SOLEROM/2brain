@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from typing import Any, Literal, Optional
 from pydantic import BaseModel, field_validator
 
@@ -62,6 +63,21 @@ class PageFrontmatter(BaseModel):
     def confidence_in_range(cls, v: float) -> float:
         if not (0.0 <= v <= 1.0):
             raise ValueError(f"confidence must be in [0.0, 1.0], got {v}")
+        return v
+
+    # YAML auto-parses unquoted ISO timestamps into datetime / date objects
+    # (e.g. `created_at: 2026-04-17T21:36:00+00:00`). The Claude agent doesn't
+    # always quote them, so we coerce back to ISO-8601 strings before validation.
+    @field_validator(
+        "created_at", "updated_at", "reviewed_at",
+        mode="before",
+    )
+    @classmethod
+    def _stringify_timestamps(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat()
+        if isinstance(v, date):
+            return v.isoformat()
         return v
 
 

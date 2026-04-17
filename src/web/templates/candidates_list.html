@@ -1,32 +1,73 @@
 {% extends "base.html" %}
+{% set nav_active = 'candidates' %}
 {% block title %}Review Queue — {{ domain }}{% endblock %}
 {% block content %}
-<h1>Review Queue: {{ domain }}</h1>
-<p>{{ items|length }} pending</p>
+<div class="row" style="justify-content: space-between;">
+  <div>
+    <h1>Review Queue</h1>
+    <p class="page-subtitle">
+      Domain <code>{{ domain }}</code> — {{ items|length }} pending candidate{{ '' if items|length == 1 else 's' }}.
+    </p>
+  </div>
+  <div class="row">
+    <a href="/digest" class="btn-secondary">+ New Digest</a>
+    <a href="/ingest" class="btn">+ Ingest Source</a>
+  </div>
+</div>
+
 {% if items %}
-<table>
-  <thead><tr><th>Title</th><th>Type</th><th>Confidence</th><th>Operation</th><th>Actions</th></tr></thead>
-  <tbody>
-  {% for item in items %}
-  <tr>
-    <td><a href="/candidates/{{ domain }}/{{ item.filename }}">{{ item.title }}</a></td>
-    <td>{{ item.type }}</td>
-    <td><span class="badge badge-{{ item.confidence_label | lower | replace(' ', '-') }}">{{ item.confidence_label }} ({{ "%.2f"|format(item.confidence) }})</span></td>
-    <td>{{ item.operation }}</td>
-    <td>
-      <form method="post" action="/candidates/{{ domain }}/{{ item.filename }}/approve" style="display:inline">
-        <input name="reviewed_by" value="user" type="hidden">
-        <button type="submit" class="btn-approve">Approve</button>
-      </form>
-      <form method="post" action="/candidates/{{ domain }}/{{ item.filename }}/reject" style="display:inline">
-        <button type="submit" class="btn-reject">Reject</button>
-      </form>
-    </td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 38%;">Title</th>
+        <th>Type</th>
+        <th>Operation</th>
+        <th>Confidence</th>
+        <th style="text-align:right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for item in items %}
+    <tr>
+      <td>
+        <a href="/candidates/{{ domain }}/{{ item.filename }}"><strong>{{ item.title }}</strong></a>
+        {% if item.tags %}<div class="subtle">{% for t in item.tags %}<span class="tag">{{ t }}</span>{% endfor %}</div>{% endif %}
+      </td>
+      <td>{{ item.type or '—' }}</td>
+      <td><span class="badge badge-operation">{{ item.operation }}</span></td>
+      <td>
+        <span class="badge badge-{{ item.confidence_label | lower | replace(' ', '-') }}">
+          {{ item.confidence_label }}
+        </span>
+        <span class="subtle" style="margin-left:4px;">{{ "%.2f"|format(item.confidence) }}</span>
+      </td>
+      <td style="text-align:right; white-space: nowrap;">
+        <form method="post" action="/candidates/{{ domain }}/{{ item.filename }}/approve" style="display:inline">
+          <input name="reviewed_by" value="user" type="hidden">
+          <input name="drop_raw" value="1" type="hidden">
+          <button type="submit" class="btn-approve">Approve</button>
+        </form>
+        <form method="post" action="/candidates/{{ domain }}/{{ item.filename }}/reject" style="display:inline">
+          <button type="submit" class="btn-reject">Reject</button>
+        </form>
+        <form method="post" action="/candidates/{{ domain }}/pending/{{ item.filename }}/delete" class="inline-form"
+              onsubmit="return confirm('Permanently delete this candidate? This cannot be undone.');">
+          <button type="submit" class="btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% else %}
-<p>No pending candidates.</p>
+<div class="empty">
+  <h3 style="margin-bottom: 4px;">No pending candidates</h3>
+  <p class="muted">Ingest a source, then digest it to produce candidate pages for review.</p>
+  <div style="margin-top: 16px;">
+    <a href="/ingest" class="btn">Ingest a source</a>
+  </div>
+</div>
 {% endif %}
 {% endblock %}

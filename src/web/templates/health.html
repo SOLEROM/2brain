@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% set nav_active = 'health' %}
+{% block title %}Health — {{ domain }}{% endblock %}
+{% block content %}
+<div class="row" style="justify-content: space-between;">
+  <div>
+    <h1>Health Check</h1>
+    <p class="page-subtitle">Domain <code>{{ domain }}</code>. Runs the lint scanner and regenerates the index files under <code>indexes/</code>.</p>
+  </div>
+  <form method="post" action="/health/{{ domain }}/run">
+    <button type="submit" class="btn">Re-run lint</button>
+  </form>
+</div>
+
+<div class="tiles">
+  <div class="tile {% if summary.low_confidence %}tile-warn{% else %}tile-ok{% endif %}">
+    <div class="n">{{ summary.low_confidence }}</div>
+    <div class="l">Low confidence</div>
+  </div>
+  <div class="tile {% if summary.contradictions %}tile-warn{% else %}tile-ok{% endif %}">
+    <div class="n">{{ summary.contradictions }}</div>
+    <div class="l">Contradictions</div>
+  </div>
+  <div class="tile {% if summary.orphans %}tile-warn{% else %}tile-ok{% endif %}">
+    <div class="n">{{ summary.orphans }}</div>
+    <div class="l">Orphans</div>
+  </div>
+  <div class="tile {% if summary.stale_pages %}tile-warn{% else %}tile-ok{% endif %}">
+    <div class="n">{{ summary.stale_pages }}</div>
+    <div class="l">Stale pages</div>
+  </div>
+  <div class="tile {% if summary.stuck_jobs %}tile-danger{% else %}tile-ok{% endif %}">
+    <div class="n">{{ summary.stuck_jobs }}</div>
+    <div class="l">Stuck jobs</div>
+  </div>
+  <div class="tile {% if summary.stale_candidates %}tile-warn{% else %}tile-ok{% endif %}">
+    <div class="n">{{ summary.stale_candidates }}</div>
+    <div class="l">Stale candidates</div>
+  </div>
+  <div class="tile {% if summary.index_mismatches %}tile-warn{% else %}tile-ok{% endif %}">
+    <div class="n">{{ summary.index_mismatches }}</div>
+    <div class="l">Index mismatches</div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Low-confidence pages <span class="muted" style="font-weight: normal;">({{ summary.low_confidence }})</span></h3>
+  {% if report.low_confidence_pages %}
+  <ul style="margin: 8px 0 0 18px;">
+    {% for p in report.low_confidence_pages %}
+    <li>
+      <strong>{{ p.title }}</strong>
+      <span class="muted">— {{ "%.2f"|format(p.confidence) }}</span>
+      <div class="subtle"><code>{{ p.path }}</code></div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">None.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h3>Unresolved contradictions <span class="muted" style="font-weight: normal;">({{ summary.contradictions }})</span></h3>
+  {% if report.unresolved_contradictions %}
+  <ul style="margin: 8px 0 0 18px;">
+    {% for p in report.unresolved_contradictions %}
+    <li><strong>{{ p.title }}</strong><div class="subtle"><code>{{ p.path }}</code></div></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">None.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h3>Orphans <span class="muted" style="font-weight: normal;">({{ summary.orphans }})</span></h3>
+  {% if report.orphans %}
+  <ul style="margin: 8px 0 0 18px;">
+    {% for p in report.orphans %}
+    <li><strong>{{ p.title }}</strong><div class="subtle"><code>{{ p.path }}</code></div></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">None.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h3>Stale pages <span class="muted" style="font-weight: normal;">({{ summary.stale_pages }})</span></h3>
+  {% if report.stale_pages %}
+  <ul style="margin: 8px 0 0 18px;">
+    {% for p in report.stale_pages %}
+    <li><strong>{{ p.title }}</strong> <span class="muted">— {{ p.days_old }} days old</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">None.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h3>Stuck jobs <span class="muted" style="font-weight: normal;">({{ summary.stuck_jobs }})</span></h3>
+  {% if report.stuck_jobs %}
+  <ul style="margin: 8px 0 0 18px;">
+    {% for j in report.stuck_jobs %}
+    <li><code>{{ j.job_id }}</code><span class="muted"> — heartbeat: {{ j.heartbeat_at or 'none' }}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">None.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h3>Stale candidates <span class="muted" style="font-weight: normal;">({{ summary.stale_candidates }})</span></h3>
+  {% if report.stale_candidates %}
+  <ul style="margin: 8px 0 0 18px;">
+    {% for c in report.stale_candidates %}
+    <li><code>{{ c.filename }}</code> <span class="muted">— {{ c.days_old }} days old</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">None.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h3>Index mismatches <span class="muted" style="font-weight: normal;">({{ summary.index_mismatches }})</span></h3>
+  {% if report.index_mismatches %}
+  <ul style="margin: 8px 0 0 18px;">
+    {% for m in report.index_mismatches %}
+    <li><span class="badge">{{ m.kind }}</span> <code>{{ m.reference }}</code></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">None.</p>{% endif %}
+</div>
+{% endblock %}

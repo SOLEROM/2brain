@@ -1,0 +1,17 @@
+name: deepSearch
+description: 'Deep research worker. Reads the approved wiki (optionally candidates),
+  calls the LLM with the prompt in prompt.md, and files a deep-research-report candidate
+  for human approval.
+
+  '
+schedule: manual
+domain: edge-ai
+question: 'Compare the current edge-AI inference platforms we know about — where are
+  the gaps in the wiki? What should we research next?
+
+  '
+model: claude-sonnet-4-6
+max_tokens: 4096
+max_pages: 16
+max_context_chars: 60000
+include_candidates: true

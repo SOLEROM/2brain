@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% set nav_active = 'sources' %}
+{% block title %}Raw Sources{% endblock %}
+{% block content %}
+<div class="row" style="justify-content: space-between;">
+  <div>
+    <h1>Raw Sources</h1>
+    <p class="page-subtitle">Immutable sources ingested into <code>inbox/raw/</code>. {{ sources|length }} total.</p>
+  </div>
+  <a href="/ingest" class="btn">+ Ingest Source</a>
+</div>
+
+{% if sources %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Type</th>
+        <th>Ingested</th>
+        <th>Domain hint</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sources %}
+      <tr>
+        <td>
+          <a href="/sources/{{ s.raw_id }}"><strong>{{ s.title }}</strong></a>
+          <div class="subtle"><code>{{ s.raw_id }}</code></div>
+        </td>
+        <td>{{ s.source_type or '—' }}</td>
+        <td class="subtle">{{ s.ingested_at[:10] if s.ingested_at else '—' }}</td>
+        <td>{{ s.domain_hint or '—' }}</td>
+        <td>
+          <span class="badge badge-{{ 'approved' if s.fetch_status == 'ok' else 'failed' }}">{{ s.fetch_status }}</span>
+        </td>
+        <td style="text-align: right; white-space: nowrap;">
+          <a href="/sources/{{ s.raw_id }}" class="btn-secondary">Read</a>
+          <a href="/digest?raw_id={{ s.raw_id }}{% if s.domain_hint %}&amp;domain={{ s.domain_hint }}{% endif %}" class="btn-secondary">Digest</a>
+          <form method="post" action="/sources/{{ s.raw_id }}/delete" class="inline-form"
+                onsubmit="return confirm('Delete raw source {{ s.raw_id }} permanently? Candidates citing it will still reference its id.');">
+            <button type="submit" class="btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty">
+  <h3 style="margin-bottom: 4px;">No raw sources yet</h3>
+  <p class="muted">Ingest your first source to get started.</p>
+  <div style="margin-top: 16px;"><a href="/ingest" class="btn">Ingest a source</a></div>
+</div>
+{% endif %}
+{% endblock %}

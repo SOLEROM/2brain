@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% set nav_active = 'ask' %}
+{% block title %}Ask — {{ domain }}{% endblock %}
+{% block content %}
+<h1>Ask</h1>
+<p class="page-subtitle">
+  Ask a question grounded in the <strong>approved</strong> wiki for
+  <code>{{ domain }}</code>. The agent cites every claim with
+  <code>[APPROVED]</code> or <code>[CANDIDATE]</code>.
+</p>
+
+<section class="card ask-bar" style="padding: 14px 16px; margin-bottom: 18px;">
+  <form method="get" action="/ask/{{ domain }}">
+    <div class="form-group" style="margin: 0 0 10px;">
+      <label for="ask-input" class="muted" style="font-size: 13px;">Your question</label>
+      <textarea id="ask-input" name="q" rows="4" autofocus
+                placeholder="e.g. What do we know about NNAPI fallback modes on VOXL 2?">{{ question }}</textarea>
+    </div>
+    <div class="row" style="gap: 14px; flex-wrap: wrap; align-items: center; justify-content: space-between;">
+      <label class="muted" style="font-size: 13px;">
+        <input type="checkbox" name="include_candidates" value="on"
+               {% if include_candidates %}checked{% endif %}>
+        Include pending candidates (labelled <code>[CANDIDATE]</code>)
+      </label>
+      <div class="row" style="gap: 8px;">
+        {% if question %}
+          <a href="/ask/{{ domain }}" class="btn-secondary">Clear</a>
+        {% endif %}
+        <button type="submit" class="btn">Ask</button>
+      </div>
+    </div>
+  </form>
+</section>
+
+{% if ask_ctx %}
+  {% if ask_ctx.error %}
+  <div class="card error ask-answer" style="border-color: var(--c-danger); background: var(--c-danger-bg, var(--c-surface));">
+    <h3 style="margin: 0 0 6px 0; color: var(--c-danger);">Ask failed</h3>
+    <pre style="white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 13px;">{{ ask_ctx.error }}</pre>
+    <p class="muted" style="margin: 10px 0 0; font-size: 12px;">
+      Check <code>ANTHROPIC_API_KEY</code> and
+      <code>config/agents.yaml → query_agent.model</code>.
+    </p>
+  </div>
+  {% else %}
+  <div class="ask-answer">
+    <div class="row" style="justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px;">
+      <h3 style="margin: 0;">Agent answer</h3>
+      <span class="badge badge-candidate" style="font-size: 11px;">LLM</span>
+    </div>
+    <p class="muted" style="margin: 0 0 14px; font-size: 13px;">
+      <strong>Q:</strong> {{ ask_ctx.question }}
+    </p>
+
+    {% for name in ["Answer", "Candidate Additions", "Conflicts / Uncertainty", "Suggested Next Actions"] %}
+      {% set s = ask_ctx.sections[name] %}
+      <div class="ask-section">
+        <h4 style="margin: 0 0 4px;">{{ name }}</h4>
+        {% if s.is_empty %}
+          <p class="muted" style="margin: 0;">None</p>
+        {% else %}
+          <div class="md-body">{{ s.html | safe }}</div>
+        {% endif %}
+      </div>
+    {% endfor %}
+
+    {% if ask_ctx.cited %}
+    <div class="ask-sources">
+      <div class="muted" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+        Pages used ({{ ask_ctx.cited|length }})
+      </div>
+      {% for c in ask_ctx.cited %}
+      <div class="row" style="gap: 8px; align-items: baseline; flex-wrap: wrap;">
+        {% if c.is_approved %}
+          <span class="badge badge-approved">APPROVED</span>
+        {% else %}
+          <span class="badge badge-candidate">CANDIDATE</span>
+        {% endif %}
+        <a href="{{ c.link }}">{{ c.title }}</a>
+        <span class="badge badge-{{ c.confidence_label | lower | replace(' ', '-') }}">
+          {{ c.confidence_label }} · {{ "%.2f"|format(c.confidence) }}
+        </span>
+        <code style="font-size: 11px;">{{ c.rel_path }}</code>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="ask-meta">
+      model <code>{{ ask_ctx.model }}</code>
+      · tokens {{ ask_ctx.tokens_in }}→{{ ask_ctx.tokens_out }}
+      · {{ "%.1f"|format(ask_ctx.duration_s) }}s
+      · scope <code>{{ ask_ctx.scope }}</code>
+    </div>
+  </div>
+  {% endif %}
+{% else %}
+<div class="empty">
+  <p class="muted">
+    Type a question above and click <strong>Ask</strong>. Looking for a
+    keyword instead? Use <a href="/query/{{ domain }}">Query</a>.
+  </p>
+</div>
+{% endif %}
+{% endblock %}

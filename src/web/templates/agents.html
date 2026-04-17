@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% set nav_active = 'agents' %}
+{% block title %}Agents{% endblock %}
+{% block content %}
+<h1>Agents</h1>
+<p class="page-subtitle">
+  Post-analysis workers. Config and prompt for each agent live under
+  <code>agents/&lt;name&gt;/</code>. Set a schedule to run it periodically,
+  or click <strong>Run now</strong> on the detail page.
+</p>
+
+{% if not_found %}
+<div class="card error" style="border-color: var(--c-danger);">
+  <strong>Agent not found:</strong> <code>{{ not_found }}</code>
+</div>
+{% endif %}
+
+{% if agents %}
+<div class="agents-list">
+  {% for a in agents %}
+  <article class="card agent-row"
+           style="padding: 14px 18px; margin-bottom: 12px;">
+    <div class="row" style="gap: 14px; align-items: flex-start; flex-wrap: wrap;">
+      <div style="flex: 2; min-width: 240px;">
+        <h3 style="margin: 0 0 4px;">
+          <a href="/agents/{{ a.name }}">{{ a.name }}</a>
+          {% if not a.has_run_fn %}
+          <span class="badge badge-rejected" title="No Python run fn bound to this folder">not wired up</span>
+          {% endif %}
+        </h3>
+        {% if a.description %}
+        <p class="muted" style="margin: 0 0 6px; font-size: 13px;">{{ a.description }}</p>
+        {% endif %}
+      </div>
+      <div style="flex: 1; min-width: 140px;">
+        <div class="muted" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Schedule</div>
+        <div><code>{{ a.schedule }}</code></div>
+      </div>
+      <div style="flex: 1; min-width: 160px;">
+        <div class="muted" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Last run</div>
+        <div>
+          {{ a.last_run_relative }}
+          {% if a.last_status %}
+            <span class="badge badge-{% if a.last_status == 'ok' %}approved{% elif a.last_status == 'failed' %}rejected{% else %}candidate{% endif %}">{{ a.last_status }}</span>
+          {% endif %}
+        </div>
+        {% if a.last_duration_s %}
+        <div class="muted" style="font-size: 12px;">{{ "%.1f"|format(a.last_duration_s) }}s</div>
+        {% endif %}
+      </div>
+      <div style="flex: 0 0 auto;">
+        <a href="/agents/{{ a.name }}" class="btn-secondary">Open →</a>
+      </div>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">
+  <h3 style="margin-bottom: 4px;">No agents registered</h3>
+  <p class="muted">
+    Create <code>agents/&lt;name&gt;/config.yaml</code> and
+    <code>agents/&lt;name&gt;/prompt.md</code>, register a run function in
+    <code>src/agents/registry.py</code>, and it will show up here.
+  </p>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% set nav_active = 'agents' %}
+{% block title %}Agent — {{ agent.name }}{% endblock %}
+{% block content %}
+{% if agent.last_status == 'running' %}
+<meta http-equiv="refresh" content="4">
+{% endif %}
+
+<div class="row" style="gap: 10px; align-items: baseline; flex-wrap: wrap;">
+  <h1 style="margin: 0;">
+    <a href="/agents" class="muted" style="text-decoration: none; font-size: 14px;">Agents</a>
+    <span class="muted" style="font-weight: normal;">›</span>
+    {{ agent.name }}
+  </h1>
+  {% if not agent.has_run_fn %}
+  <span class="badge badge-rejected">not wired up</span>
+  {% endif %}
+</div>
+<p class="page-subtitle">
+  Folder <code>{{ agent.folder }}</code>
+  {% if agent.description %} · {{ agent.description }}{% endif %}
+</p>
+
+{# ---------------- Status + manual trigger ---------------- #}
+<section class="card" style="padding: 14px 18px; margin-bottom: 18px;">
+  <div class="row" style="gap: 16px; flex-wrap: wrap; align-items: flex-start;">
+    <div style="flex: 1; min-width: 220px;">
+      <div class="muted" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Last run</div>
+      <div style="font-size: 15px;">
+        {{ agent.last_run_relative }}
+        {% if agent.last_status %}
+          <span class="badge badge-{% if agent.last_status == 'ok' %}approved{% elif agent.last_status == 'failed' %}rejected{% else %}candidate{% endif %}">{{ agent.last_status }}</span>
+        {% endif %}
+      </div>
+      {% if agent.last_run_at %}
+      <div class="muted" style="font-size: 12px;">{{ agent.last_run_at }}</div>
+      {% endif %}
+      {% if agent.last_duration_s %}
+      <div class="muted" style="font-size: 12px;">took {{ "%.1f"|format(agent.last_duration_s) }}s</div>
+      {% endif %}
+    </div>
+    <div style="flex: 1; min-width: 220px;">
+      <div class="muted" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Schedule</div>
+      <form method="post" action="/agents/{{ agent.name }}/schedule" style="margin: 4px 0 0; display: flex; gap: 8px;">
+        <select name="schedule">
+          {% for i in intervals %}
+          <option value="{{ i }}" {% if i == agent.schedule %}selected{% endif %}>{{ i }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn-secondary">Save</button>
+      </form>
+    </div>
+    <div style="flex: 2; min-width: 260px;">
+      <div class="muted" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Run now</div>
+      <form method="post" action="/agents/{{ agent.name }}/run" style="margin: 4px 0 0; display: flex; gap: 8px; flex-wrap: wrap;">
+        <input type="text" name="question" placeholder="Override question (optional)…"
+               style="flex: 1; min-width: 200px;"
+               {% if agent.last_status == 'running' %}disabled{% endif %}>
+        <button type="submit" class="btn"
+                {% if agent.last_status == 'running' or not agent.has_run_fn %}disabled{% endif %}>
+          {% if agent.last_status == 'running' %}Running…{% else %}Run now{% endif %}
+        </button>
+      </form>
+      {% if agent.last_status == 'running' %}
+      <div class="muted" style="font-size: 12px; margin-top: 4px;">
+        This page auto-refreshes while the agent is running.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if agent.last_message %}
+  <div style="margin-top: 14px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--c-surface-alt); border: 1px solid var(--c-border); font-size: 13px;">
+    <strong>Last message:</strong>
+    <span style="word-break: break-word;">{{ agent.last_message }}</span>
+    {% if agent.last_job_id %}
+      · <a href="/jobs/completed/{{ agent.last_job_id }}.yaml">job log</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if agent.last_outputs %}
+  <div style="margin-top: 10px; font-size: 13px;">
+    <strong>Last outputs:</strong>
+    <ul style="margin: 4px 0 0 20px; padding: 0;">
+      {% for o in agent.last_outputs %}
+      <li><code>{{ o }}</code></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if agent.state.last_error %}
+  <details style="margin-top: 10px;">
+    <summary class="muted" style="cursor: pointer; font-size: 13px;">Last error (click to expand)</summary>
+    <pre style="background: var(--c-danger-bg, var(--c-surface)); border: 1px solid var(--c-danger); border-radius: var(--radius-sm); padding: 10px; font-size: 12px; white-space: pre-wrap; word-break: break-word;">{{ agent.state.last_error }}</pre>
+  </details>
+  {% endif %}
+</section>
+
+{# ---------------- Config editor ---------------- #}
+<section class="card" style="padding: 14px 18px; margin-bottom: 18px;">
+  <div class="row" style="justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px;">
+    <h3 style="margin: 0;">Config</h3>
+    <code class="muted" style="font-size: 12px;">{{ agent.config_path_rel }}</code>
+  </div>
+
+  <form method="post" action="/agents/{{ agent.name }}/config" style="margin-top: 10px;">
+    <div class="row" style="gap: 14px; flex-wrap: wrap;">
+      <div class="form-group" style="flex: 1; min-width: 200px;">
+        <label for="cfg-domain">Domain</label>
+        <input id="cfg-domain" name="domain" value="{{ agent.config.domain or '' }}">
+      </div>
+      <div class="form-group" style="flex: 1; min-width: 200px;">
+        <label for="cfg-model">Model</label>
+        <input id="cfg-model" name="model" value="{{ agent.config.model or '' }}">
+      </div>
+      <div class="form-group" style="flex: 1; min-width: 160px;">
+        <label for="cfg-schedule">Schedule</label>
+        <select id="cfg-schedule" name="schedule">
+          {% for i in intervals %}
+          <option value="{{ i }}" {% if i == agent.schedule %}selected{% endif %}>{{ i }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="row" style="gap: 14px; flex-wrap: wrap;">
+      <div class="form-group" style="flex: 1; min-width: 140px;">
+        <label for="cfg-max-tokens">Max tokens</label>
+        <input id="cfg-max-tokens" name="max_tokens" type="number"
+               value="{{ agent.config.max_tokens if agent.config.max_tokens is not none else '' }}">
+      </div>
+      <div class="form-group" style="flex: 1; min-width: 140px;">
+        <label for="cfg-max-pages">Max pages</label>
+        <input id="cfg-max-pages" name="max_pages" type="number"
+               value="{{ agent.config.max_pages if agent.config.max_pages is not none else '' }}">
+      </div>
+      <div class="form-group" style="flex: 1; min-width: 180px;">
+        <label for="cfg-max-chars">Max context chars</label>
+        <input id="cfg-max-chars" name="max_context_chars" type="number"
+               value="{{ agent.config.max_context_chars if agent.config.max_context_chars is not none else '' }}">
+      </div>
+      <div class="form-group" style="flex: 0 0 auto; align-self: flex-end;">
+        <label class="muted" style="font-size: 13px;">
+          <input type="checkbox" name="include_candidates" value="on"
+                 {% if agent.config.include_candidates %}checked{% endif %}>
+          Include candidates
+        </label>
+      </div>
+    </div>
+    <div class="form-group">
+      <label for="cfg-description">Description</label>
+      <input id="cfg-description" name="description" value="{{ agent.config.description or '' }}">
+    </div>
+    <div class="form-group">
+      <label for="cfg-question">Default question</label>
+      <textarea id="cfg-question" name="question" rows="3">{{ agent.config.question or '' }}</textarea>
+    </div>
+    <div class="row" style="justify-content: flex-end; gap: 8px;">
+      <button type="submit" class="btn">Save config</button>
+    </div>
+  </form>
+
+  <details style="margin-top: 12px;">
+    <summary class="muted" style="cursor: pointer; font-size: 12px;">Raw YAML (read-only)</summary>
+    <pre style="font-size: 12px; overflow-x: auto;">{{ agent.config | tojson(indent=2) }}</pre>
+  </details>
+</section>
+
+{# ---------------- Prompt editor ---------------- #}
+<section class="card" style="padding: 14px 18px; margin-bottom: 18px;">
+  <div class="row" style="justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px;">
+    <h3 style="margin: 0;">Prompt</h3>
+    <code class="muted" style="font-size: 12px;">{{ agent.prompt_path_rel }}</code>
+  </div>
+  <p class="muted" style="font-size: 12px; margin: 4px 0 10px;">
+    Template variables: <code>{domain}</code>, <code>{now}</code>, <code>{candidate_id}</code>.
+  </p>
+  <form method="post" action="/agents/{{ agent.name }}/prompt">
+    <div class="form-group">
+      <textarea name="prompt" rows="18" style="font-family: var(--font-mono, monospace); font-size: 13px;">{{ agent.prompt }}</textarea>
+    </div>
+    <div class="row" style="justify-content: flex-end;">
+      <button type="submit" class="btn">Save prompt</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

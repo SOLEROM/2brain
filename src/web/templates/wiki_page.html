@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% set nav_active = 'wiki' %}
+{% block title %}{{ fm.title }}{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+  <a href="/wiki/{{ domain }}">← Wiki</a> / <code>{{ rel_path }}</code>
+</div>
+
+<div class="review-layout">
+  <div class="review-content">
+    <h1>{{ fm.title }}</h1>
+    <div class="page-meta">
+      <span class="badge badge-{{ fm.status | default('approved') }}">{{ fm.status | default('approved') }}</span>
+      {% if fm.type %}<span class="badge">{{ fm.type }}</span>{% endif %}
+      <span class="badge badge-{{ confidence_label | lower | replace(' ', '-') }}">
+        {{ confidence_label }} · {{ "%.2f"|format(confidence) }}
+      </span>
+    </div>
+    <div class="page-body">{{ body_html | safe }}</div>
+  </div>
+
+  <aside class="review-sidebar">
+    <h3>Metadata</h3>
+    <dl class="kv">
+      {% if fm.created_at %}<dt>Created</dt><dd>{{ fm.created_at[:10] }}</dd>{% endif %}
+      {% if fm.updated_at %}<dt>Updated</dt><dd>{{ fm.updated_at[:10] }}</dd>{% endif %}
+      {% if fm.reviewed_by %}<dt>Reviewed by</dt><dd>{{ fm.reviewed_by }}</dd>{% endif %}
+      {% if fm.reviewed_at %}<dt>Reviewed at</dt><dd>{{ fm.reviewed_at[:10] }}</dd>{% endif %}
+      {% if fm.origin_candidate_id %}<dt>From candidate</dt><dd><code style="font-size:11px;">{{ fm.origin_candidate_id }}</code></dd>{% endif %}
+    </dl>
+
+    {% if fm.tags %}
+    <h3>Tags</h3>
+    <div>{% for t in fm.tags %}<span class="tag">{{ t }}</span>{% endfor %}</div>
+    {% endif %}
+
+    <h3>Actions</h3>
+    <div class="sidebar-actions">
+      <form method="post" action="/wiki/{{ domain }}/delete"
+            onsubmit="return confirm('Permanently delete this approved page? This cannot be undone (but git preserves history).');">
+        <input type="hidden" name="rel_path" value="{{ rel_path }}">
+        <button type="submit" class="btn-danger">🗑 Delete page</button>
+      </form>
+    </div>
+
+    {% if fm.sources %}
+    <h3>Sources</h3>
+    <ul style="padding-left: 16px; margin: 0; font-size: 13px;">
+      {% for src in fm.sources %}
+        {% if src is mapping %}
+          <li>
+            {% if src.url %}<a href="{{ src.url }}" rel="noopener" target="_blank">{{ src.title or src.url }}</a>
+            {% else %}{{ src.title or src.raw_id }}{% endif %}
+            {% if src.raw_id %}<div class="subtle"><a href="/sources/{{ src.raw_id }}"><code>{{ src.raw_id }}</code></a></div>{% endif %}
+          </li>
+        {% else %}
+          <li><code>{{ src }}</code></li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

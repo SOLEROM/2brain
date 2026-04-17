@@ -2,6 +2,34 @@ import pytest
 from pathlib import Path
 import yaml
 from src.ingest import ingest_source, build_raw_id, sanitize_content
+from src.web.routes.ingest_routes import parse_github_url
+
+
+@pytest.mark.parametrize("url,want_kind,want_fields", [
+    ("https://github.com/anthropics/claude-cookbooks", "repo",
+     {"owner": "anthropics", "repo": "claude-cookbooks"}),
+    ("http://github.com/foo/bar.git", "repo", {"owner": "foo", "repo": "bar"}),
+    ("https://www.github.com/foo/bar/", "repo", {"owner": "foo", "repo": "bar"}),
+    ("https://github.com/foo/bar?ref=main", "repo", {"owner": "foo", "repo": "bar"}),
+    ("https://github.com/foo/bar/blob/main/src/app.py", "blob",
+     {"owner": "foo", "repo": "bar", "branch": "main", "path": "src/app.py"}),
+])
+def test_parse_github_url_matches(url, want_kind, want_fields):
+    got = parse_github_url(url)
+    assert got is not None, f"expected match for {url}"
+    assert got[0] == want_kind
+    for k, v in want_fields.items():
+        assert got[1][k] == v
+
+
+@pytest.mark.parametrize("url", [
+    "https://example.com/foo/bar",
+    "https://github.com/foo",
+    "https://github.com/foo/bar/tree/main",  # tree URL — not handled here
+    "",
+])
+def test_parse_github_url_non_matches(url):
+    assert parse_github_url(url) is None
 
 
 def test_build_raw_id_format():

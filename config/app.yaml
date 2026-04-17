@@ -1,13 +1,42 @@
-version: "1"
-repo_root: "."
+version: '1'
+repo_root: .
+default_domain: edge-ai
 web_ui:
-  host: "127.0.0.1"
+  host: 127.0.0.1
   port: 5000
   auto_open_browser: false
-default_domain: edge-ai
 audit:
   enabled: true
   log_queries: false
+source_types:
+- url
+- text
+- note
+- pdf
+- repo
+- image
+- video
+- api
+suggested_tags:
+- benchmark
+- concept
+- hardware
+- software
+- vendor
+- toolchain
+digest:
+  max_source_chars: 40000
+  max_tokens: 4096
+lint:
+  stale_days: 90
+  stuck_job_minutes: 10
+  low_confidence_threshold: 0.35
+ui:
+  default_theme: hackers-green
+  themes:
+  - light
+  - dark
+  - hackers-green
 badge_colors:
   approved: green
   candidate: yellow

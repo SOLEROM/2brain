@@ -2,10 +2,15 @@ from pathlib import Path
 from typing import Optional
 import yaml
 from src.models import PageFrontmatter, ValidationResult
+from src.utils import coerce_datetimes
 
 
 def parse_frontmatter(path: Path) -> tuple[dict, str]:
-    """Returns (frontmatter_dict, body_text). Empty dict if no frontmatter."""
+    """Returns (frontmatter_dict, body_text). Empty dict if no frontmatter.
+
+    datetime/date values parsed by YAML are coerced to ISO-8601 strings so
+    templates can safely slice them (e.g. ``created_at[:10]``).
+    """
     text = path.read_text(encoding="utf-8")
     if not text.startswith("---"):
         return {}, text
@@ -17,7 +22,7 @@ def parse_frontmatter(path: Path) -> tuple[dict, str]:
     except yaml.YAMLError:
         fm = {}
     body = parts[2].lstrip("\n")
-    return fm, body
+    return coerce_datetimes(fm), body
 
 
 def validate_frontmatter(path: Path) -> ValidationResult:

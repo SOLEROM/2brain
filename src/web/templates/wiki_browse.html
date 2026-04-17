@@ -1,23 +1,234 @@
 {% extends "base.html" %}
+{% set nav_active = 'wiki' %}
 {% block title %}Wiki — {{ domain }}{% endblock %}
 {% block content %}
-<h1>Wiki: {{ domain }}</h1>
-<p>{{ pages|length }} approved pages</p>
+<div class="row" style="justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+  <div>
+    <h1>Wiki</h1>
+    <p class="page-subtitle">
+      Domain <code>{{ domain }}</code> — {{ pages|length }} approved page{{ '' if pages|length == 1 else 's' }}.
+    </p>
+  </div>
+  {% if pages %}
+  <div class="view-toolbar" role="tablist" aria-label="Display mode">
+    <button type="button" class="view-btn" data-view-option="list" aria-label="List view">
+      <span class="vb-icon" aria-hidden="true">☰</span><span class="vb-label">List</span>
+    </button>
+    <button type="button" class="view-btn" data-view-option="cards" aria-label="Cards view">
+      <span class="vb-icon" aria-hidden="true">▦</span><span class="vb-label">Cards</span>
+    </button>
+    <button type="button" class="view-btn" data-view-option="compact" aria-label="Compact view">
+      <span class="vb-icon" aria-hidden="true">≡</span><span class="vb-label">Compact</span>
+    </button>
+  </div>
+  {% endif %}
+</div>
+
 {% if pages %}
-<table>
-  <thead><tr><th>Title</th><th>Type</th><th>Confidence</th><th>Status</th></tr></thead>
-  <tbody>
-  {% for page in pages %}
-  <tr>
-    <td>{{ page.title }}</td>
-    <td>{{ page.type }}</td>
-    <td><span class="badge badge-{{ page.confidence_label | lower | replace(' ', '-') }}">{{ page.confidence_label }}</span></td>
-    <td><span class="badge badge-{{ page.status }}">{{ page.status }}</span></td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="wiki-filters card" style="padding: 14px 16px;">
+  <div class="row" style="gap: 12px; flex-wrap: wrap; align-items: flex-end;">
+    <div class="form-group" style="flex: 2; min-width: 200px; margin: 0;">
+      <label for="filter-title">Search title</label>
+      <input type="search" id="filter-title" placeholder="Type to filter by title…">
+    </div>
+    <div class="form-group" style="flex: 1; min-width: 150px; margin: 0;">
+      <label for="filter-from">Updated from</label>
+      <input type="date" id="filter-from">
+    </div>
+    <div class="form-group" style="flex: 1; min-width: 150px; margin: 0;">
+      <label for="filter-to">Updated to</label>
+      <input type="date" id="filter-to">
+    </div>
+    <button type="button" id="filter-reset" class="btn-secondary" style="height: 36px;">Reset</button>
+  </div>
+  {% if all_tags %}
+  <div class="form-group" style="margin: 12px 0 0;">
+    <label>Tags <span class="muted" style="font-weight: normal;">(click to toggle; multiple = OR)</span></label>
+    <div class="filter-tags" id="filter-tags">
+      {% for t in all_tags %}
+      <button type="button" class="filter-tag" data-tag="{{ t }}">{{ t }}</button>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  <div class="filter-summary muted" style="margin-top: 10px; font-size: 13px;">
+    Showing <span id="filter-visible">{{ pages|length }}</span> of {{ pages|length }} page{{ '' if pages|length == 1 else 's' }}.
+  </div>
+</div>
+
+<div id="wiki-root" data-wiki-view="list">
+{% for type_name, type_pages in by_type.items() %}
+<section class="wiki-type-group" data-type-name="{{ type_name }}">
+  <h3 class="wiki-type-heading">
+    <span style="text-transform: capitalize;">{{ type_name }}</span>
+    <span class="muted" style="font-weight: normal;">(<span class="type-visible-count">{{ type_pages|length }}</span>)</span>
+  </h3>
+  <div class="page-list">
+    {% for page in type_pages %}
+    <article class="page-item"
+             data-type="{{ page.type }}"
+             data-title="{{ page.title | lower }}"
+             data-tags="{{ (page.tags | join(' ')) | lower }}"
+             data-updated="{{ page.updated_at[:10] if page.updated_at else '' }}">
+      <div class="pi-thumb" aria-hidden="true">
+        <span class="pi-thumb-letter">{{ (page.title or '?') | first | upper }}</span>
+        <span class="pi-thumb-type">{{ page.type or '' }}</span>
+      </div>
+      <div class="pi-body">
+        <a class="pi-title" href="/wiki/{{ domain }}/page/{{ page.rel_path }}">{{ page.title }}</a>
+        <div class="pi-meta">
+          {% if page.type %}<span class="badge">{{ page.type }}</span>{% endif %}
+          <span class="badge badge-{{ page.status }}">{{ page.status }}</span>
+          <span class="badge badge-{{ page.confidence_label | lower | replace(' ', '-') }}">
+            {{ page.confidence_label }} · {{ "%.2f"|format(page.confidence) }}
+          </span>
+          {% if page.updated_at %}<span class="subtle">· updated {{ page.updated_at[:10] }}</span>{% endif %}
+        </div>
+        {% if page.tags %}
+        <div class="pi-tags">
+          {% for t in page.tags %}<span class="tag">{{ t }}</span>{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      <div class="pi-actions">
+        <a class="pi-open" href="/wiki/{{ domain }}/page/{{ page.rel_path }}">Open →</a>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  <div class="type-empty muted" style="display: none; padding: 10px; font-size: 13px;">No pages match the current filters.</div>
+</section>
+{% endfor %}
+</div>
+
+<div id="filter-empty" class="empty" style="display: none; margin-top: 20px;">
+  <h3 style="margin-bottom: 4px;">No pages match</h3>
+  <p class="muted">Adjust or reset the filters to see results.</p>
+</div>
+
+<script>
+(function() {
+  const root = document.getElementById('wiki-root');
+  const KEY = '2brain-wiki-view';
+  const VALID = ['list', 'cards', 'compact'];
+
+  function setView(mode) {
+    if (!VALID.includes(mode)) mode = 'list';
+    root.setAttribute('data-wiki-view', mode);
+    document.querySelectorAll('[data-view-option]').forEach(function(b) {
+      b.classList.toggle('active', b.dataset.viewOption === mode);
+    });
+    try { localStorage.setItem(KEY, mode); } catch (e) {}
+  }
+
+  let initial = 'list';
+  try {
+    const stored = localStorage.getItem(KEY);
+    if (stored) initial = stored;
+  } catch (e) {}
+  setView(initial);
+
+  document.querySelectorAll('[data-view-option]').forEach(function(btn) {
+    btn.addEventListener('click', function() { setView(btn.dataset.viewOption); });
+  });
+
+  // Compact view: clicking a row toggles its expanded details (everything but
+  // the title link itself).
+  root.addEventListener('click', function(e) {
+    if (root.getAttribute('data-wiki-view') !== 'compact') return;
+    if (e.target.closest('.pi-title') || e.target.closest('.pi-open')) return;
+    const item = e.target.closest('.page-item');
+    if (!item) return;
+    item.classList.toggle('expanded');
+  });
+
+  // -----------------------------------------------------------------
+  // Filters: title substring, date range on updated_at, tag chips (OR)
+  // -----------------------------------------------------------------
+  const titleInput = document.getElementById('filter-title');
+  const fromInput = document.getElementById('filter-from');
+  const toInput = document.getElementById('filter-to');
+  const resetBtn = document.getElementById('filter-reset');
+  const visibleEl = document.getElementById('filter-visible');
+  const emptyEl = document.getElementById('filter-empty');
+  const tagButtons = document.querySelectorAll('.filter-tag');
+  const activeTags = new Set();
+
+  function applyFilters() {
+    const title = (titleInput.value || '').trim().toLowerCase();
+    const from = fromInput.value;  // YYYY-MM-DD or ''
+    const to = toInput.value;
+    let visible = 0;
+
+    root.querySelectorAll('.page-item').forEach(function(item) {
+      const itemTitle = item.dataset.title || '';
+      const itemTags = (item.dataset.tags || '').split(/\s+/).filter(Boolean);
+      const itemDate = item.dataset.updated || '';
+      let show = true;
+      if (title && itemTitle.indexOf(title) === -1) show = false;
+      if (show && from && (!itemDate || itemDate < from)) show = false;
+      if (show && to && (!itemDate || itemDate > to)) show = false;
+      if (show && activeTags.size > 0) {
+        let any = false;
+        for (const t of activeTags) {
+          if (itemTags.indexOf(t.toLowerCase()) !== -1) { any = true; break; }
+        }
+        if (!any) show = false;
+      }
+      item.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+
+    // Hide sections with zero visible items; update per-section counts.
+    root.querySelectorAll('.wiki-type-group').forEach(function(section) {
+      let count = 0;
+      section.querySelectorAll('.page-item').forEach(function(it) {
+        if (it.style.display !== 'none') count++;
+      });
+      const countEl = section.querySelector('.type-visible-count');
+      if (countEl) countEl.textContent = count;
+      section.style.display = count === 0 ? 'none' : '';
+    });
+
+    if (visibleEl) visibleEl.textContent = visible;
+    if (emptyEl) emptyEl.style.display = visible === 0 ? '' : 'none';
+  }
+
+  if (titleInput) titleInput.addEventListener('input', applyFilters);
+  if (fromInput) fromInput.addEventListener('change', applyFilters);
+  if (toInput) toInput.addEventListener('change', applyFilters);
+  tagButtons.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const tag = btn.dataset.tag.toLowerCase();
+      if (activeTags.has(tag)) {
+        activeTags.delete(tag);
+        btn.classList.remove('active');
+      } else {
+        activeTags.add(tag);
+        btn.classList.add('active');
+      }
+      applyFilters();
+    });
+  });
+  if (resetBtn) {
+    resetBtn.addEventListener('click', function() {
+      titleInput.value = '';
+      fromInput.value = '';
+      toInput.value = '';
+      activeTags.clear();
+      tagButtons.forEach(function(b) { b.classList.remove('active'); });
+      applyFilters();
+    });
+  }
+})();
+</script>
 {% else %}
-<p>No approved pages yet. <a href="/candidates/{{ domain }}">Review pending candidates &rarr;</a></p>
+<div class="empty">
+  <h3 style="margin-bottom: 4px;">No approved pages yet</h3>
+  <p class="muted">Review and approve candidates to populate the wiki.</p>
+  <div style="margin-top: 16px;">
+    <a href="/candidates/{{ domain }}" class="btn">Go to Review Queue</a>
+  </div>
+</div>
 {% endif %}
 {% endblock %}

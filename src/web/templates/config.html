@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% set nav_active = 'config' %}
+{% block title %}Config{% endblock %}
+{% block content %}
+<h1>Config</h1>
+<p class="page-subtitle">
+  Centralised settings, saved to <code>{{ config_path }}</code>. Empty values fall back to the built-in defaults.
+</p>
+
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error"><strong>Error:</strong> {{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <form method="post" action="/config">
+
+    <h3 style="margin-top: 0;">Domain</h3>
+    <div class="form-group">
+      <label for="default_domain">Default Domain</label>
+      <select name="default_domain" id="default_domain">
+        {% for d in domains %}
+        <option value="{{ d }}" {% if d == cfg.default_domain %}selected{% endif %}>{{ d }}</option>
+        {% endfor %}
+        {% if cfg.default_domain and cfg.default_domain not in domains %}
+        <option value="{{ cfg.default_domain }}" selected>{{ cfg.default_domain }} (not found on disk)</option>
+        {% endif %}
+      </select>
+      <span class="form-hint">
+        Landing page when you open <code>/</code>. Domains are auto-discovered from
+        <code>domains/*/domain.yaml</code>.
+      </span>
+    </div>
+
+    <h3 style="margin-top: 24px;">Web UI</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="web_ui_host">Host</label>
+        <input type="text" id="web_ui_host" name="web_ui_host"
+               value="{{ cfg.web_ui.host if cfg.web_ui and cfg.web_ui.host is defined else '127.0.0.1' }}">
+      </div>
+      <div class="form-group">
+        <label for="web_ui_port">Port</label>
+        <input type="text" id="web_ui_port" name="web_ui_port"
+               value="{{ cfg.web_ui.port if cfg.web_ui and cfg.web_ui.port is defined else 5000 }}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label style="display: flex; align-items: center; gap: 8px; font-weight: 500;">
+        <input type="checkbox" name="web_ui_auto_open_browser" value="1"
+               {% if cfg.web_ui and cfg.web_ui.auto_open_browser %}checked{% endif %}
+               style="width: auto; margin: 0;">
+        Auto-open browser on start
+      </label>
+    </div>
+
+    <h3 style="margin-top: 24px;">Theme</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="ui_default_theme">Default theme</label>
+        <select name="ui_default_theme" id="ui_default_theme">
+          {% for t in available_themes %}
+          <option value="{{ t }}" {% if t == (cfg.ui.default_theme if cfg.ui else 'light') %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+        <span class="form-hint">Applied before JS runs on first paint.</span>
+      </div>
+      <div class="form-group">
+        <label for="ui_themes">Available themes <span class="muted">(one per line)</span></label>
+        <textarea name="ui_themes" id="ui_themes" rows="3">{{ (cfg.ui.themes if cfg.ui and cfg.ui.themes else ['light', 'dark', 'hackers-green']) | join('\n') }}</textarea>
+      </div>
+    </div>
+
+    <h3 style="margin-top: 24px;">Ingest</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="source_types">Source types <span class="muted">(one per line)</span></label>
+        <textarea name="source_types" id="source_types" rows="8">{{ (cfg.source_types or []) | join('\n') }}</textarea>
+        <span class="form-hint">Options shown in the ingest dropdown.</span>
+      </div>
+      <div class="form-group">
+        <label for="suggested_tags">Suggested tags <span class="muted">(one per line)</span></label>
+        <textarea name="suggested_tags" id="suggested_tags" rows="8">{{ (cfg.suggested_tags or []) | join('\n') }}</textarea>
+        <span class="form-hint">Autocomplete suggestions on the ingest tag field.</span>
+      </div>
+    </div>
+
+    <h3 style="margin-top: 24px;">Digest</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="digest_max_source_chars">Max source chars</label>
+        <input type="text" id="digest_max_source_chars" name="digest_max_source_chars"
+               value="{{ cfg.digest.max_source_chars if cfg.digest else 40000 }}">
+        <span class="form-hint">Raw source content is truncated beyond this length before the agent sees it.</span>
+      </div>
+      <div class="form-group">
+        <label for="digest_max_tokens">Max output tokens</label>
+        <input type="text" id="digest_max_tokens" name="digest_max_tokens"
+               value="{{ cfg.digest.max_tokens if cfg.digest else 4096 }}">
+        <span class="form-hint">Per <code>messages.create</code> call.</span>
+      </div>
+    </div>
+
+    <h3 style="margin-top: 24px;">Lint / Health</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="lint_stale_days">Stale page threshold (days)</label>
+        <input type="text" id="lint_stale_days" name="lint_stale_days"
+               value="{{ cfg.lint.stale_days if cfg.lint else 90 }}">
+      </div>
+      <div class="form-group">
+        <label for="lint_stuck_job_minutes">Stuck job threshold (minutes)</label>
+        <input type="text" id="lint_stuck_job_minutes" name="lint_stuck_job_minutes"
+               value="{{ cfg.lint.stuck_job_minutes if cfg.lint else 10 }}">
+      </div>
+      <div class="form-group">
+        <label for="lint_low_confidence_threshold">Low confidence threshold</label>
+        <input type="text" id="lint_low_confidence_threshold" name="lint_low_confidence_threshold"
+               value="{{ cfg.lint.low_confidence_threshold if cfg.lint else 0.35 }}">
+        <span class="form-hint">Pages below this are flagged in <code>indexes/low-confidence.md</code>.</span>
+      </div>
+    </div>
+
+    <h3 style="margin-top: 24px;">Audit</h3>
+    <div class="form-group">
+      <label style="display: flex; align-items: center; gap: 8px; font-weight: 500;">
+        <input type="checkbox" name="audit_enabled" value="1"
+               {% if cfg.audit and cfg.audit.enabled %}checked{% endif %}
+               style="width: auto; margin: 0;">
+        Audit logging enabled
+      </label>
+    </div>
+    <div class="form-group">
+      <label style="display: flex; align-items: center; gap: 8px; font-weight: 500;">
+        <input type="checkbox" name="audit_log_queries" value="1"
+               {% if cfg.audit and cfg.audit.log_queries %}checked{% endif %}
+               style="width: auto; margin: 0;">
+        Log queries to <code>audit/</code>
+      </label>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn">Save Config</button>
+      <span class="form-hint">Lists and numbers take effect immediately. Host/port change applies on next server restart.</span>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Current YAML</h3>
+  <pre>{{ cfg | tojson(indent=2) }}</pre>
+</div>
+{% endblock %}

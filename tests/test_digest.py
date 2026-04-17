@@ -160,6 +160,6 @@ NNAPI is an Android ML API.
 """)]
     )
 
-    candidate_ids = digest_raw(raw_id, "edge-ai", repo_root=repo_root)
+    candidate_ids = digest_raw(raw_id, "edge-ai", repo_root=repo_root, api_key="test-key")
     assert len(candidate_ids) >= 1
     mock_client.messages.create.assert_called_once()

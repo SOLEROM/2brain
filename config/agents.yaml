@@ -8,6 +8,12 @@ deep_research_agent:
   model: claude-opus-4-6
   max_sources_per_job: 20
   include_candidates: true
+query_agent:
+  model: claude-sonnet-4-6
+  max_context_chars: 40000
+  max_pages: 12
+  max_tokens: 2048
+  include_candidates_default: false
 source_discovery_agent:
   enabled: true
   max_suggestions_per_run: 10

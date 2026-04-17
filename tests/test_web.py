@@ -89,3 +89,61 @@ def test_query_page_loads(client):
 def test_query_returns_results(client):
     resp = client.get("/query/edge-ai?q=test")
     assert resp.status_code == 200
+    assert "Test Candidate" in resp.text
+
+
+def test_candidate_review_404_on_missing(client):
+    resp = client.get("/candidates/edge-ai/does-not-exist.md")
+    assert resp.status_code == 404
+
+
+def test_health_page_loads(client):
+    resp = client.get("/health/edge-ai")
+    assert resp.status_code == 200
+    assert "Health" in resp.text
+
+
+def test_jobs_page_loads(client):
+    resp = client.get("/jobs")
+    assert resp.status_code == 200
+
+
+def test_sources_page_loads(client):
+    resp = client.get("/sources")
+    assert resp.status_code == 200
+
+
+def test_wiki_page_view(client, wiki_root):
+    # Approve a candidate first so we have an approved page.
+    client.post("/candidates/edge-ai/cand_test.md/approve",
+                data={"reviewed_by": "vlad"},
+                follow_redirects=False)
+    resp = client.get("/wiki/edge-ai/page/domains/edge-ai/concepts/test-candidate.md")
+    assert resp.status_code == 200
+    assert "Test Candidate" in resp.text
+
+
+def test_candidate_edit_saves(client, wiki_root):
+    edited = """---
+title: "Edited Title"
+domain: edge-ai
+type: concept
+status: candidate
+confidence: 0.80
+sources: []
+created_at: "2026-04-16T15:30:00+00:00"
+updated_at: "2026-04-16T15:40:00+00:00"
+tags: [edited]
+candidate_id: cand_edited
+candidate_operation: create
+target_path: domains/edge-ai/concepts/edited.md
+raw_ids: []
+---
+# Edited body
+"""
+    resp = client.post("/candidates/edge-ai/cand_test.md/edit",
+                       data={"raw_content": edited},
+                       follow_redirects=False)
+    assert resp.status_code in (302, 303)
+    saved = (wiki_root / "candidates/edge-ai/pending/cand_test.md").read_text()
+    assert "Edited Title" in saved

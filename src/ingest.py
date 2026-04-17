@@ -30,6 +30,7 @@ def ingest_source(
     url: Optional[str] = None,
     domain_hint: Optional[str] = None,
     submitted_by: str = "user",
+    tags: Optional[list[str]] = None,
     repo_root: Path = Path("."),
 ) -> str:
     """Ingest a raw source. Returns raw_id."""
@@ -53,7 +54,7 @@ def ingest_source(
         "ingested_at": now_iso(),
         "content_hash": content_hash,
         "domain_hint": domain_hint,
-        "tags": [],
+        "tags": list(tags or []),
         "license": None,
         "fetch_status": "ok",
     }

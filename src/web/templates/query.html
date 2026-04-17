@@ -1,19 +1,147 @@
 {% extends "base.html" %}
+{% set nav_active = 'query' %}
 {% block title %}Query — {{ domain }}{% endblock %}
 {% block content %}
-<h1>Query: {{ domain }}</h1>
-<form method="get">
-  <input name="q" value="{{ query }}" placeholder="Search knowledge base..." style="width: 60%; padding: 8px;">
-  <button type="submit">Search</button>
-</form>
-{% if query %}
-  <p>{{ results|length }} result(s) for "{{ query }}"</p>
-  {% for r in results %}
-  <div class="result-card">
-    <h3>{{ r.title }} <span class="badge badge-{{ r.status }}">{{ r.status }}</span></h3>
-    <div>Type: {{ r.type }} | Confidence: <span class="badge">{{ r.confidence_label }} ({{ "%.2f"|format(r.confidence) }})</span></div>
-    <p>{{ r.snippet }}</p>
+<h1>Query</h1>
+<p class="page-subtitle">
+  Keyword search over approved and candidate pages in <code>{{ domain }}</code>.
+  Looking for a synthesised answer? Use <a href="/ask/{{ domain }}">Ask</a>.
+</p>
+
+<section class="card" style="padding: 14px 16px; margin-bottom: 18px;">
+  <form method="get" action="/query/{{ domain }}" class="search-form">
+    <div class="search-bar" style="margin-bottom: 12px;">
+      <input type="search" name="q" value="{{ query }}"
+             placeholder="Search titles, tags, and body…" autofocus>
+      <button type="submit" class="btn">Search</button>
+      <a href="/query/{{ domain }}" class="btn-secondary" style="align-self: center;">Reset</a>
+    </div>
+
+    <div class="row" style="gap: 18px; flex-wrap: wrap; align-items: flex-start;">
+      {% if facets.types %}
+      <div class="form-group" style="flex: 1; min-width: 220px; margin: 0;">
+        <label>Type <span class="muted" style="font-weight: normal;">(OR)</span></label>
+        <div class="filter-tags">
+          {% for t in facets.types %}
+          <label class="filter-tag {% if t in filters.types %}active{% endif %}">
+            <input type="checkbox" name="type" value="{{ t }}"
+                   style="display:none;"
+                   {% if t in filters.types %}checked{% endif %}
+                   onchange="this.form.submit()">
+            {{ t }}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if facets.statuses %}
+      <div class="form-group" style="flex: 1; min-width: 180px; margin: 0;">
+        <label>Status</label>
+        <div class="filter-tags">
+          {% for s in facets.statuses %}
+          <label class="filter-tag {% if s in filters.statuses %}active{% endif %}">
+            <input type="checkbox" name="status" value="{{ s }}"
+                   style="display:none;"
+                   {% if s in filters.statuses %}checked{% endif %}
+                   onchange="this.form.submit()">
+            {{ s }}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="form-group" style="flex: 1; min-width: 220px; margin: 0;">
+        <label for="min-conf">
+          Min confidence
+          <span class="muted" id="min-conf-value" style="font-weight: normal;">
+            {{ "%.2f"|format(filters.min_conf) if filters.min_conf is not none else "any" }}
+          </span>
+        </label>
+        <input type="range" id="min-conf" name="min_conf"
+               min="0" max="1" step="0.05"
+               value="{{ filters.min_conf if filters.min_conf is not none else 0 }}"
+               oninput="document.getElementById('min-conf-value').textContent = parseFloat(this.value).toFixed(2);"
+               onchange="this.form.submit()">
+      </div>
+    </div>
+
+    {% if facets.tags %}
+    <div class="form-group" style="margin: 12px 0 0;">
+      <label>Tags <span class="muted" style="font-weight: normal;">(OR — click to toggle)</span></label>
+      <div class="filter-tags">
+        {% for t in facets.tags %}
+        <label class="filter-tag {% if t in filters.tags %}active{% endif %}">
+          <input type="checkbox" name="tag" value="{{ t }}"
+                 style="display:none;"
+                 {% if t in filters.tags %}checked{% endif %}
+                 onchange="this.form.submit()">
+          {{ t }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="muted" style="margin-top: 10px; font-size: 13px;">
+      Scope:
+      <label style="margin-left: 6px;">
+        <input type="radio" name="scope" value="all" {% if filters.scope != 'approved' %}checked{% endif %}
+               onchange="this.form.submit()"> approved + candidates
+      </label>
+      <label style="margin-left: 12px;">
+        <input type="radio" name="scope" value="approved" {% if filters.scope == 'approved' %}checked{% endif %}
+               onchange="this.form.submit()"> approved only
+      </label>
+    </div>
+  </form>
+</section>
+
+{% if query or filters.types or filters.tags or filters.statuses or filters.min_conf is not none %}
+  <p class="muted">
+    {{ results|length }} result{{ '' if results|length == 1 else 's' }}
+    {% if query %}for "<strong>{{ query }}</strong>"{% endif %}.
+  </p>
+  {% if results %}
+    {% for r in results %}
+    <div class="result-card">
+      <h3>
+        {% if r.is_approved %}
+          <a href="/wiki/{{ domain }}/page/{{ r.rel_path }}">{{ r.title }}</a>
+        {% else %}
+          {{ r.title }}
+        {% endif %}
+        <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
+        <span class="badge badge-{{ r.confidence_label | lower | replace(' ', '-') }}">
+          {{ r.confidence_label }} · {{ "%.2f"|format(r.confidence) }}
+        </span>
+      </h3>
+      {% if r.snippet %}<p class="snippet">{{ r.snippet }}</p>{% endif %}
+      <div class="meta">
+        <span>{{ r.type }}</span>
+        {% if r.tags %}<span>·</span>
+          {% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}
+        {% endif %}
+        <span>·</span>
+        <code style="font-size: 11px;">{{ r.rel_path }}</code>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="empty">
+    <p>No pages matched.</p>
+    <p class="muted" style="font-size: 13px;">
+      Try fewer filters, or switch scope to <em>approved + candidates</em>.
+    </p>
   </div>
-  {% endfor %}
+  {% endif %}
+{% else %}
+<div class="empty">
+  <p class="muted">
+    Enter a keyword, toggle filter chips, or try the LLM-powered
+    <a href="/ask/{{ domain }}">Ask</a> tab instead.
+  </p>
+</div>
 {% endif %}
 {% endblock %}
