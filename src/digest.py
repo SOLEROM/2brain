@@ -99,6 +99,14 @@ Domain: {domain}
 # Frontmatter parsing from string (not file)
 # ---------------------------------------------------------------------------
 
+def extract_page_from_response(text: str) -> str:
+    """Strip any preamble Claude may have added before the --- frontmatter block."""
+    idx = text.find("---")
+    if idx == -1:
+        return text
+    return text[idx:]
+
+
 def parse_frontmatter_str(text: str) -> tuple[dict, str]:
     """Parse frontmatter from a string. Returns (frontmatter_dict, body)."""
     if not text.startswith("---"):
@@ -145,6 +153,9 @@ def digest_raw(
         raise FileNotFoundError(f"Raw source not found: {raw_id}")
 
     source_content = (raw_dir / "source.md").read_text(encoding="utf-8")
+    # Truncate very large sources (e.g. full HTML pages) to avoid token limits
+    if len(source_content) > 40_000:
+        source_content = source_content[:40_000] + "\n\n[... content truncated ...]"
 
     # Load agent config — resolve relative path against repo_root so tests work
     agents_cfg_path = repo_root / "config" / "agents.yaml"
@@ -164,7 +175,7 @@ def digest_raw(
         messages=[{"role": "user", "content": prompt}],
     )
 
-    page_text = message.content[0].text.strip()
+    page_text = extract_page_from_response(message.content[0].text.strip())
 
     # Validate frontmatter before writing
     with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as tf:
