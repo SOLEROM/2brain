@@ -1,1 +1,18 @@
 .env
+
+# Private data — raw sources, candidates, approved wiki, jobs, audit logs
+inbox/
+candidates/
+domains/
+jobs/
+audit/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
