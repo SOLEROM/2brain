@@ -3,6 +3,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+if [[ -f .env ]]; then
+    set -a
+    source .env
+    set +a
+fi
+
 if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
     echo "Warning: ANTHROPIC_API_KEY is not set. Digest and research features will not work."
 fi
