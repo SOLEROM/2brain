@@ -6,6 +6,7 @@ candidates/
 domains/
 jobs/
 audit/
+docs/
 
 # Python
 __pycache__/
