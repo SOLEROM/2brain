@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Review Queue — {{ domain }}{% endblock %}
+{% block content %}
+<h1>Review Queue: {{ domain }}</h1>
+<p>{{ items|length }} pending</p>
+{% if items %}
+<table>
+  <thead><tr><th>Title</th><th>Type</th><th>Confidence</th><th>Operation</th><th>Actions</th></tr></thead>
+  <tbody>
+  {% for item in items %}
+  <tr>
+    <td><a href="/candidates/{{ domain }}/{{ item.filename }}">{{ item.title }}</a></td>
+    <td>{{ item.type }}</td>
+    <td><span class="badge badge-{{ item.confidence_label | lower | replace(' ', '-') }}">{{ item.confidence_label }} ({{ "%.2f"|format(item.confidence) }})</span></td>
+    <td>{{ item.operation }}</td>
+    <td>
+      <form method="post" action="/candidates/{{ domain }}/{{ item.filename }}/approve" style="display:inline">
+        <input name="reviewed_by" value="user" type="hidden">
+        <button type="submit" class="btn-approve">Approve</button>
+      </form>
+      <form method="post" action="/candidates/{{ domain }}/{{ item.filename }}/reject" style="display:inline">
+        <button type="submit" class="btn-reject">Reject</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No pending candidates.</p>
+{% endif %}
+{% endblock %}

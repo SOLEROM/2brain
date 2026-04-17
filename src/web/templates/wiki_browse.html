@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Wiki — {{ domain }}{% endblock %}
+{% block content %}
+<h1>Wiki: {{ domain }}</h1>
+<p>{{ pages|length }} approved pages</p>
+{% if pages %}
+<table>
+  <thead><tr><th>Title</th><th>Type</th><th>Confidence</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for page in pages %}
+  <tr>
+    <td>{{ page.title }}</td>
+    <td>{{ page.type }}</td>
+    <td><span class="badge badge-{{ page.confidence_label | lower | replace(' ', '-') }}">{{ page.confidence_label }}</span></td>
+    <td><span class="badge badge-{{ page.status }}">{{ page.status }}</span></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No approved pages yet. <a href="/candidates/{{ domain }}">Review pending candidates &rarr;</a></p>
+{% endif %}
+{% endblock %}

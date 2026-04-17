@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Query — {{ domain }}{% endblock %}
+{% block content %}
+<h1>Query: {{ domain }}</h1>
+<form method="get">
+  <input name="q" value="{{ query }}" placeholder="Search knowledge base..." style="width: 60%; padding: 8px;">
+  <button type="submit">Search</button>
+</form>
+{% if query %}
+  <p>{{ results|length }} result(s) for "{{ query }}"</p>
+  {% for r in results %}
+  <div class="result-card">
+    <h3>{{ r.title }} <span class="badge badge-{{ r.status }}">{{ r.status }}</span></h3>
+    <div>Type: {{ r.type }} | Confidence: <span class="badge">{{ r.confidence_label }} ({{ "%.2f"|format(r.confidence) }})</span></div>
+    <p>{{ r.snippet }}</p>
+  </div>
+  {% endfor %}
+{% endif %}
+{% endblock %}

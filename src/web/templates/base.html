@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2brain — {% block title %}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <nav>
+    <a href="/">2brain</a>
+    <span>|</span>
+    <a href="/candidates/{{ domain | default('edge-ai') }}">Review Queue</a>
+    <a href="/wiki/{{ domain | default('edge-ai') }}">Wiki</a>
+    <a href="/query/{{ domain | default('edge-ai') }}">Query</a>
+  </nav>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

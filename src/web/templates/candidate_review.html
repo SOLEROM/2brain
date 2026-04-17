@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Review: {{ fm.title }}{% endblock %}
+{% block content %}
+<div class="review-layout">
+  <div class="review-content">
+    <h1>{{ fm.title }}</h1>
+    <div class="page-meta">
+      <span class="badge badge-candidate">Candidate</span>
+      <span class="confidence">Confidence: {{ confidence_label }} ({{ "%.2f"|format(fm.confidence) }})</span>
+      <span>Type: {{ fm.type }}</span>
+      <span>Operation: {{ fm.candidate_operation }}</span>
+    </div>
+    <div class="page-body">{{ body_html | safe }}</div>
+  </div>
+  <div class="review-sidebar">
+    <h3>Target Path</h3>
+    <code>{{ fm.target_path }}</code>
+    <h3>Tags</h3>
+    <p>{{ fm.tags | join(', ') }}</p>
+    <h3>Actions</h3>
+    <form method="post" action="/candidates/{{ domain }}/{{ filename }}/approve">
+      <input name="reviewed_by" value="user" placeholder="Your name">
+      <button type="submit" class="btn-approve">&#10003; Approve</button>
+    </form>
+    <form method="post" action="/candidates/{{ domain }}/{{ filename }}/reject">
+      <button type="submit" class="btn-reject">&#10007; Reject</button>
+    </form>
+    <h3>Raw</h3>
+    <details><summary>View frontmatter</summary><pre>{{ raw_content[:500] }}</pre></details>
+  </div>
+</div>
+{% endblock %}
