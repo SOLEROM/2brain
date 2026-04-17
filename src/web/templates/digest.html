@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Digest Source{% endblock %}
+{% block content %}
+<h1>Digest Raw Source</h1>
+<p class="page-subtitle">Select a raw source and target domain. The agent will produce candidate pages for review.</p>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+{% if result %}
+<div class="alert alert-success">
+  <strong>Digest complete:</strong> {{ result.raw_id }} → {{ result.domain }}<br>
+  {% if result.candidates %}
+  <strong>Candidates created ({{ result.candidates|length }}):</strong>
+  <ul style="margin-top:6px">
+    {% for c in result.candidates %}
+    <li><a href="/candidates/{{ result.domain }}/{{ c }}">{{ c }}</a></li>
+    {% endfor %}
+  </ul>
+  <div style="margin-top:12px">
+    <a href="/candidates/{{ result.domain }}" class="btn-approve">→ Review Queue</a>
+  </div>
+  {% else %}
+  <span class="muted">No candidates produced — check jobs/failed/ for details.</span>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <form method="post" action="/digest">
+    <div class="form-group">
+      <label for="domain">Target Domain</label>
+      <select name="domain" id="domain">
+        {% for d in domains %}
+        <option value="{{ d }}" {% if d == domain %}selected{% endif %}>{{ d }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Raw Source</label>
+      {% if sources %}
+      <div class="source-list">
+        {% for src in sources %}
+        <label class="source-row {% if src.raw_id == selected_raw_id %}selected{% endif %}">
+          <input type="radio" name="raw_id" value="{{ src.raw_id }}"
+            {% if src.raw_id == selected_raw_id %}checked{% elif loop.first and not selected_raw_id %}checked{% endif %}>
+          <div class="source-info">
+            <span class="source-title">{{ src.title }}</span>
+            <span class="source-meta">
+              {{ src.raw_id }}
+              {% if src.source_type %} · {{ src.source_type }}{% endif %}
+              {% if src.domain_hint %} · hint: {{ src.domain_hint }}{% endif %}
+              {% if src.ingested_at %} · {{ src.ingested_at[:10] }}{% endif %}
+              {% if src.fetch_status and src.fetch_status != 'ok' %}
+              · <span class="badge badge-rejected">{{ src.fetch_status }}</span>
+              {% endif %}
+            </span>
+          </div>
+        </label>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="muted">No raw sources found. <a href="/ingest">Ingest a source first.</a></p>
+      {% endif %}
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn-approve" {% if not sources %}disabled{% endif %}>Digest</button>
+      <span class="muted form-hint">This calls the Claude API and may take 10–30 seconds.</span>
+    </div>
+  </form>
+</div>
+{% endblock %}

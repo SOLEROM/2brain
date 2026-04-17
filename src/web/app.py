@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from src.web.routes import candidates, wiki, query_routes
+from src.web.routes import candidates, wiki, query_routes, ingest_routes, digest_routes
 
 
 def create_app(repo_root: Path = Path(".")) -> FastAPI:
@@ -21,6 +21,8 @@ def create_app(repo_root: Path = Path(".")) -> FastAPI:
     async def root():
         return RedirectResponse("/candidates/edge-ai")
 
+    app.include_router(ingest_routes.router)
+    app.include_router(digest_routes.router)
     app.include_router(candidates.router)
     app.include_router(wiki.router)
     app.include_router(query_routes.router)

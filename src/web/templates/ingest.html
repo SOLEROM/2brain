@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Ingest Source{% endblock %}
+{% block content %}
+<h1>Ingest Source</h1>
+<p class="page-subtitle">Add a raw source to the inbox. Paste content or provide a URL to fetch.</p>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+{% if result %}
+<div class="alert alert-success">
+  <strong>Ingested:</strong> {{ result.title }}<br>
+  <strong>Raw ID:</strong> <code>{{ result.raw_id }}</code><br>
+  {% if result.domain_hint %}
+  <strong>Domain hint:</strong> {{ result.domain_hint }}<br>
+  {% endif %}
+  <div style="margin-top:12px">
+    <a href="/digest?raw_id={{ result.raw_id }}&domain={{ result.domain_hint or domain }}" class="btn-approve">→ Digest this source</a>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <form method="post" action="/ingest" id="ingest-form">
+    <div class="form-tabs">
+      <button type="button" class="tab-btn active" onclick="switchTab('url')">Fetch URL</button>
+      <button type="button" class="tab-btn" onclick="switchTab('paste')">Paste Content</button>
+    </div>
+
+    <div id="tab-url" class="tab-panel">
+      <div class="form-group">
+        <label for="url">URL</label>
+        <input type="url" name="url" id="url" placeholder="https://example.com/article" value="{{ form.url if form else '' }}" class="input-wide">
+      </div>
+    </div>
+
+    <div id="tab-paste" class="tab-panel" style="display:none">
+      <div class="form-group">
+        <label for="content">Content</label>
+        <textarea name="content" id="content" rows="10" placeholder="Paste article, notes, or documentation here...">{{ form.content if form else '' }}</textarea>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="title">Title <span class="muted">(optional for URL — auto-extracted)</span></label>
+        <input type="text" name="title" id="title" value="{{ form.title if form else '' }}" class="input-wide">
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="source_type">Source Type</label>
+        <select name="source_type" id="source_type">
+          {% for st in source_types %}
+          <option value="{{ st }}" {% if form and form.source_type == st %}selected{% elif not form and st == 'text' %}selected{% endif %}>{{ st }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="domain_hint">Domain Hint <span class="muted">(optional)</span></label>
+        <select name="domain_hint" id="domain_hint">
+          <option value="">— none —</option>
+          {% for d in domains %}
+          <option value="{{ d }}" {% if (form and form.domain_hint == d) or (not form and d == domain) %}selected{% endif %}>{{ d }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn-approve">Ingest</button>
+    </div>
+  </form>
+</div>
+
+<script>
+function switchTab(name) {
+  document.getElementById('tab-url').style.display = name === 'url' ? '' : 'none';
+  document.getElementById('tab-paste').style.display = name === 'paste' ? '' : 'none';
+  document.querySelectorAll('.tab-btn').forEach((b, i) => {
+    b.classList.toggle('active', (i === 0 && name === 'url') || (i === 1 && name === 'paste'));
+  });
+}
+{% if form and form.content %}
+switchTab('paste');
+{% endif %}
+</script>
+{% endblock %}
