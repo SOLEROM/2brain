@@ -1,8 +1,12 @@
 import asyncio
+import hashlib
+import html as html_lib
 import re
+import urllib.parse
 from pathlib import Path
 from typing import Optional
 
+import yaml
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
@@ -10,6 +14,121 @@ from src.ingest import ingest_source
 from src.web.routes.shared import get_source_types, get_suggested_tags, list_domains
 
 router = APIRouter()
+
+
+# -----------------------------------------------------------------------------
+# Media download (best-effort)
+# -----------------------------------------------------------------------------
+
+_MEDIA_EXTS = ("png", "jpg", "jpeg", "gif", "webp", "svg", "bmp",
+               "mp4", "webm", "mov", "m4v", "pdf")
+_MEDIA_ATTR_RE = re.compile(
+    r'(?:src|href|poster)\s*=\s*["\']([^"\']+?\.(?:' + "|".join(_MEDIA_EXTS) + r'))(?:\?[^"\']*)?["\']',
+    re.IGNORECASE,
+)
+_MD_IMAGE_RE = re.compile(r'!\[[^\]]*\]\(\s*([^)\s]+)', re.IGNORECASE)
+_MAX_MEDIA_COUNT = 30
+_MAX_MEDIA_BYTES = 8 * 1024 * 1024  # 8 MB per asset
+
+
+def _extract_media_urls(content: str, base_url: str) -> list[str]:
+    """Return absolute URLs of media assets referenced by the content."""
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def _add(raw_url: str) -> None:
+        if not raw_url or raw_url.startswith("data:"):
+            return
+        unescaped = html_lib.unescape(raw_url).strip()
+        if not unescaped:
+            return
+        abs_url = urllib.parse.urljoin(base_url or "", unescaped)
+        if not abs_url.startswith(("http://", "https://")):
+            return
+        if abs_url in seen:
+            return
+        seen.add(abs_url)
+        found.append(abs_url)
+
+    for m in _MEDIA_ATTR_RE.finditer(content or ""):
+        _add(m.group(1))
+        if len(found) >= _MAX_MEDIA_COUNT:
+            return found
+    for m in _MD_IMAGE_RE.finditer(content or ""):
+        _add(m.group(1))
+        if len(found) >= _MAX_MEDIA_COUNT:
+            return found
+    return found
+
+
+def _safe_asset_filename(url: str) -> str:
+    """Derive a collision-resistant on-disk name for a downloaded asset."""
+    parsed = urllib.parse.urlparse(url)
+    raw_name = Path(parsed.path).name or "asset"
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", raw_name).strip("-") or "asset"
+    if len(safe) > 80:
+        stem, dot, ext = safe.rpartition(".")
+        safe = (stem[:60] + (dot + ext if dot else ""))
+    digest = hashlib.sha256(url.encode()).hexdigest()[:8]
+    if "." in safe:
+        stem, ext = safe.rsplit(".", 1)
+        return f"{stem}-{digest}.{ext}"
+    return f"{safe}-{digest}"
+
+
+def _download_one_media(url: str, dest: Path) -> Optional[int]:
+    """Download a single asset with strict size/time limits. Returns bytes written or None."""
+    import httpx
+
+    try:
+        with httpx.stream("GET", url, follow_redirects=True, timeout=10) as r:
+            if r.status_code != 200:
+                return None
+            total = 0
+            chunks: list[bytes] = []
+            for chunk in r.iter_bytes():
+                total += len(chunk)
+                if total > _MAX_MEDIA_BYTES:
+                    return None
+                chunks.append(chunk)
+        dest.write_bytes(b"".join(chunks))
+        return total
+    except Exception:
+        return None
+
+
+async def _download_media_assets(content: str, base_url: str, assets_dir: Path) -> list[dict]:
+    """Best-effort fetch of media referenced by the ingested content.
+
+    Failures per asset are silently skipped so the ingest succeeds even when
+    some assets 404 or time out.
+    """
+    urls = _extract_media_urls(content, base_url)
+    if not urls:
+        return []
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    saved: list[dict] = []
+    for url in urls:
+        name = _safe_asset_filename(url)
+        dest = assets_dir / name
+        size = await asyncio.to_thread(_download_one_media, url, dest)
+        if size is not None:
+            saved.append({"url": url, "file": name, "bytes": size})
+    return saved
+
+
+def _record_media_in_metadata(raw_dir: Path, assets: list[dict], attempted: bool) -> None:
+    """Merge media-download results into the raw source's metadata.yaml."""
+    meta_path = raw_dir / "metadata.yaml"
+    if not meta_path.exists():
+        return
+    try:
+        meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError:
+        return
+    meta["download_media"] = attempted
+    meta["media_assets"] = assets
+    meta_path.write_text(yaml.dump(meta, allow_unicode=True), encoding="utf-8")
 
 
 # -----------------------------------------------------------------------------
@@ -232,6 +351,7 @@ async def ingest_submit(
     source_type: str = Form(default="text"),
     domain_hint: str = Form(default=""),
     tags: str = Form(default=""),
+    download_media: Optional[str] = Form(default=None),
 ):
     repo_root: Path = request.app.state.repo_root
     actual_url = url.strip()
@@ -241,10 +361,12 @@ async def ingest_submit(
     domain = domain_hint or active
 
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+    want_media = (download_media or "").lower() in ("on", "1", "true", "yes")
 
     form_state = {
         "url": actual_url, "content": actual_content, "title": actual_title,
         "source_type": source_type, "domain_hint": domain_hint, "tags": tags,
+        "download_media": want_media,
     }
 
     try:
@@ -277,10 +399,28 @@ async def ingest_submit(
             tags=tag_list,
             repo_root=repo_root,
         )
+
+        media_assets: list[dict] = []
+        if want_media and actual_url:
+            raw_dir = repo_root / "inbox" / "raw" / raw_id
+            media_assets = await _download_media_assets(
+                actual_content, actual_url, raw_dir / "assets",
+            )
+            _record_media_in_metadata(raw_dir, media_assets, attempted=True)
+        elif actual_url:
+            # Still record that media was offered but declined, for provenance.
+            _record_media_in_metadata(repo_root / "inbox" / "raw" / raw_id, [], attempted=False)
+
         return _render(
             request,
             domain=domain,
-            result={"raw_id": raw_id, "title": actual_title, "domain_hint": domain_hint},
+            result={
+                "raw_id": raw_id,
+                "title": actual_title,
+                "domain_hint": domain_hint,
+                "media_count": len(media_assets),
+                "media_attempted": want_media and bool(actual_url),
+            },
         )
     except Exception as exc:
         return _render(request, domain=domain, form=form_state, error=str(exc))

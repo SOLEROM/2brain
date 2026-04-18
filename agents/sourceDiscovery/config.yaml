@@ -1,0 +1,36 @@
+name: sourceDiscovery
+description: >
+  Proposes new URLs to ingest for a domain. Reads the approved wiki
+  (optionally candidates) to find gaps and open questions, then calls
+  the LLM to suggest external sources. Appends to
+  domains/<d>/indexes/suggested-sources.md. NEVER ingests on its own —
+  human copies URLs to the Ingest form.
+
+# Manual or weekly is the typical cadence — source discovery is noisy if it
+# runs too often. Leave as `manual` to only fire on demand.
+schedule: weekly
+
+# Work scope: "all" lets the LLM propose any URL each run (dedup still
+# drops URLs already present in the file). "new" additionally skips URLs
+# recorded in agents/sourceDiscovery/seen.json so the same link isn't
+# re-suggested after being archived from the file.
+work_scope: all
+
+domain: edge-ai
+
+# Optional focus override. Pre-filled on the manual Run button in the UI,
+# and can also be typed in the Run form to override for a single run.
+# focus: >
+#   Power-efficiency benchmarks on sub-15W NPUs.
+
+# LLM settings
+model: claude-sonnet-4-6
+max_tokens: 2048
+max_pages: 20
+max_context_chars: 40000
+
+# Include pending candidates in the context the agent sees.
+include_candidates: true
+
+# Hard cap on how many suggestions to write to the file per run.
+max_suggestions_per_run: 10

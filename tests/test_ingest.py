@@ -2,7 +2,12 @@ import pytest
 from pathlib import Path
 import yaml
 from src.ingest import ingest_source, build_raw_id, sanitize_content
-from src.web.routes.ingest_routes import parse_github_url
+from src.web.routes.ingest_routes import (
+    _extract_media_urls,
+    _record_media_in_metadata,
+    _safe_asset_filename,
+    parse_github_url,
+)
 
 
 @pytest.mark.parametrize("url,want_kind,want_fields", [
@@ -110,6 +115,60 @@ def test_sanitize_content_strips_leading_frontmatter():
 def test_sanitize_content_leaves_safe_content():
     result = sanitize_content("# Hello\n\nSome text.")
     assert result == "# Hello\n\nSome text."
+
+
+def test_extract_media_urls_from_html():
+    html = '''
+    <html><body>
+      <img src="/images/diagram.png" alt="d">
+      <img src="https://cdn.example.com/hero.jpg?v=3">
+      <a href="/files/spec.pdf">spec</a>
+      <video src="clip.mp4" poster="poster.webp"></video>
+      <img src="data:image/png;base64,AAAA">
+      <img src="/images/diagram.png">   <!-- duplicate -->
+    </body></html>
+    '''
+    urls = _extract_media_urls(html, "https://example.com/docs/")
+    assert "https://example.com/images/diagram.png" in urls
+    assert "https://cdn.example.com/hero.jpg" in urls
+    assert "https://example.com/files/spec.pdf" in urls
+    assert "https://example.com/docs/clip.mp4" in urls
+    assert "https://example.com/docs/poster.webp" in urls
+    assert not any(u.startswith("data:") for u in urls)
+    # De-duplicated
+    assert len(urls) == len(set(urls))
+
+
+def test_extract_media_urls_from_markdown():
+    md = "Here is a diagram: ![d](https://example.com/x.png)\n![](./rel.jpg)"
+    urls = _extract_media_urls(md, "https://example.com/post/")
+    assert "https://example.com/x.png" in urls
+    assert "https://example.com/post/rel.jpg" in urls
+
+
+def test_safe_asset_filename_deterministic_and_suffixed():
+    url = "https://example.com/path/weird%20name.png"
+    a = _safe_asset_filename(url)
+    b = _safe_asset_filename(url)
+    assert a == b  # deterministic
+    assert a.endswith(".png")
+    assert " " not in a and "?" not in a
+
+
+def test_record_media_in_metadata_roundtrips(tmp_path):
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    meta_path = raw_dir / "metadata.yaml"
+    meta_path.write_text(yaml.dump({"id": "r", "tags": ["a"]}), encoding="utf-8")
+    _record_media_in_metadata(
+        raw_dir,
+        [{"url": "https://e/x.png", "file": "x.png", "bytes": 42}],
+        attempted=True,
+    )
+    updated = yaml.safe_load(meta_path.read_text())
+    assert updated["download_media"] is True
+    assert updated["media_assets"][0]["file"] == "x.png"
+    assert updated["tags"] == ["a"]  # pre-existing keys preserved
 
 
 def test_ingest_logs_to_audit(repo_root):

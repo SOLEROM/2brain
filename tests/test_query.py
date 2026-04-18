@@ -199,7 +199,10 @@ def test_search_filters_compose(repo_root):
 
 from src.query import (
     ASK_SECTIONS,
+    ASK_STYLES,
+    ASK_STYLE_DEFAULT,
     AskResult,
+    _resolve_ask_overrides,
     ask_llm,
     build_ask_prompt,
     collect_ask_context,
@@ -327,3 +330,55 @@ def test_ask_llm_missing_api_key(monkeypatch, repo_root):
     assert result.error and "ANTHROPIC_API_KEY" in result.error
     assert result.cited_pages, "cited pages should still be populated for transparency"
     assert result.scope == "approved"
+
+
+# ---------------------------------------------------------------------------
+# Ask UI overrides
+# ---------------------------------------------------------------------------
+
+def test_resolve_ask_overrides_clamps_and_allowlists():
+    cfg = {"model": "claude-sonnet-4-6", "max_tokens": 2048}
+    # Out-of-range temp → clamped; unknown style → default; unknown model → cfg default.
+    ov = _resolve_ask_overrides(cfg, style="weird", temperature=99.0,
+                                max_tokens=999999, model="not-a-real-model")
+    assert ov["style"] == ASK_STYLE_DEFAULT
+    assert ov["temperature"] == 1.0
+    assert ov["max_tokens"] == 8192
+    assert ov["model"] == "claude-sonnet-4-6"
+
+    # Valid inputs pass through unchanged.
+    ov2 = _resolve_ask_overrides(cfg, style="informative", temperature=0.7,
+                                 max_tokens=4096, model="claude-opus-4-7")
+    assert ov2 == {"style": "informative", "temperature": 0.7,
+                   "max_tokens": 4096, "model": "claude-opus-4-7"}
+
+    # None / garbage → config defaults, no crash.
+    ov3 = _resolve_ask_overrides(cfg, style=None, temperature=None,
+                                 max_tokens=None, model=None)
+    assert ov3["style"] == ASK_STYLE_DEFAULT
+    assert ov3["max_tokens"] == 2048
+    assert ov3["model"] == "claude-sonnet-4-6"
+
+
+def test_build_ask_prompt_injects_style_directive(repo_root):
+    _setup_wiki(repo_root)
+    pages = collect_ask_context("nnapi", "edge-ai", repo_root, include_candidates=False)
+    prompt_concise = build_ask_prompt("q", "edge-ai", pages, repo_root, style="concise")
+    prompt_informative = build_ask_prompt("q", "edge-ai", pages, repo_root, style="informative")
+    assert ASK_STYLES["concise"] in prompt_concise
+    assert ASK_STYLES["informative"] in prompt_informative
+    assert ASK_STYLES["concise"] not in prompt_informative
+
+
+def test_ask_llm_echoes_effective_settings_on_no_api_key(monkeypatch, repo_root):
+    _setup_wiki(repo_root)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    result = ask_llm(
+        "What is NNAPI?", "edge-ai", repo_root=repo_root, api_key=None,
+        style="informative", temperature=0.9, max_tokens=4096,
+        model="claude-opus-4-7",
+    )
+    assert result.style == "informative"
+    assert result.temperature == 0.9
+    assert result.max_tokens == 4096
+    assert result.model == "claude-opus-4-7"

@@ -1,0 +1,21 @@
+name: digestAgent
+description: >
+  Auto-digests new raw sources from inbox/raw/ into candidate pages for the
+  configured domain. Uses the raw's metadata.yaml:domain_hint to route.
+
+# Recommended: "manual" until you trust the pipeline, then switch to "hourly".
+schedule: manual
+
+# work_scope=new skips raw_ids already processed (tracked in seen.json).
+# Reset from the Agents tab to force a full reprocess.
+work_scope: new
+
+domain: edge-ai
+
+# If true (default), only raws whose metadata.yaml:domain_hint matches `domain`
+# are digested. If false, raws with empty/any domain_hint are eligible too.
+require_domain_hint_match: true
+
+# Hard cap on raws digested per run — each digest is a full LLM call, so this
+# guards the token budget if a backlog builds up.
+max_raws_per_run: 5

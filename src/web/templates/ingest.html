@@ -14,6 +14,14 @@
   <strong>Ingested:</strong> {{ result.title }}<br>
   <strong>Raw ID:</strong> <code>{{ result.raw_id }}</code>
   {% if result.domain_hint %}<br><strong>Domain hint:</strong> {{ result.domain_hint }}{% endif %}
+  {% if result.media_attempted %}
+    <br><strong>Media:</strong>
+    {% if result.media_count %}
+      downloaded {{ result.media_count }} asset{{ '' if result.media_count == 1 else 's' }} (best-effort)
+    {% else %}
+      none found or all downloads failed
+    {% endif %}
+  {% endif %}
   <div style="margin-top: 12px;">
     <a href="/digest?raw_id={{ result.raw_id }}&amp;domain={{ result.domain_hint or domain }}" class="btn">→ Digest this source</a>
     <a href="/sources/{{ result.raw_id }}" class="btn-secondary">View raw source</a>
@@ -32,6 +40,14 @@
       <div class="form-group">
         <label for="url">URL</label>
         <input type="url" name="url" id="url" placeholder="https://example.com/article" value="{{ form.url if form else '' }}">
+      </div>
+      <div class="form-group">
+        <label style="font-weight: normal;">
+          <input type="checkbox" name="download_media" id="download_media" value="on"
+                 {% if form and form.download_media %}checked{% endif %}>
+          Download media
+          <span class="muted" style="font-weight: normal;">(best-effort — images, PDFs, videos referenced by the page. Default: off — only text is saved.)</span>
+        </label>
       </div>
     </div>
 

@@ -58,6 +58,10 @@ class AskResult:
     duration_s: float
     scope: str  # "approved" or "approved+candidates"
     error: Optional[str] = None
+    # Effective settings used for this request (echoed to the UI).
+    style: str = "balanced"
+    temperature: float = 0.3
+    max_tokens: int = 2048
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +311,34 @@ def collect_ask_context(
 ASK_SECTIONS = ("Answer", "Candidate Additions", "Conflicts / Uncertainty", "Suggested Next Actions")
 
 
+# Style presets shown in the Ask UI. Keep this map in sync with ask.html.
+ASK_STYLES: dict[str, str] = {
+    "concise": (
+        "Keep responses terse. Prefer short bullets over paragraphs. "
+        "Aim for ≤8 bullets per section where possible. Cut prose to the minimum required to be complete."
+    ),
+    "balanced": (
+        "Moderate verbosity. Give enough context to act on the answer, "
+        "but avoid padding. Evidence > prose."
+    ),
+    "informative": (
+        "Favour depth. Explain mechanisms, trade-offs, and caveats where they aid understanding. "
+        "Every claim still requires a citation — no speculation."
+    ),
+}
+ASK_STYLE_DEFAULT = "balanced"
+
+
+# Anthropic models the Ask UI may select. Any other value falls back to the
+# `query_agent.model` configured in `config/agents.yaml`.
+ASK_ALLOWED_MODELS: set[str] = {
+    "claude-opus-4-7",
+    "claude-sonnet-4-6",
+    "claude-opus-4-6",
+    "claude-haiku-4-5-20251001",
+}
+
+
 def _rel_path_for_prompt(abs_path: str, repo_root: Path) -> str:
     try:
         return str(Path(abs_path).resolve().relative_to(repo_root.resolve()))
@@ -320,9 +352,15 @@ def build_ask_prompt(
     pages: list[PageMatch],
     repo_root: Path,
     now_iso_str: Optional[str] = None,
+    style: str = ASK_STYLE_DEFAULT,
 ) -> str:
-    """Compose the Ask prompt per CLAUDE.md §Agent Operations → Query."""
+    """Compose the Ask prompt per CLAUDE.md §Agent Operations → Query.
+
+    ``style`` selects one of ``ASK_STYLES`` — unknown values fall back to the
+    default.
+    """
     ts = now_iso_str or now_iso()
+    style_directive = ASK_STYLES.get(style, ASK_STYLES[ASK_STYLE_DEFAULT])
 
     blocks: list[str] = []
     for m in pages:
@@ -346,8 +384,10 @@ Output STRICT Markdown with exactly these four sections in this order:
 Rules:
 - Cite every non-trivial claim. Citation format: [APPROVED] `target/path.md` or [CANDIDATE] `target/path.md` (inline, right after the claim).
 - If a section has nothing to report, write the single word "None".
-- Be concise. Evidence > prose.
 - Never invent page titles, URLs, or raw_ids.
+
+## Style directive
+{style_directive}
 
 ## Domain
 {domain}
@@ -429,14 +469,69 @@ def _load_query_agent_cfg(repo_root: Path) -> dict:
     }
 
 
+# Temperature / max_tokens guardrails — matches the UI sliders/selects.
+_ASK_TEMP_MIN = 0.0
+_ASK_TEMP_MAX = 1.0
+_ASK_MAX_TOKENS_MIN = 256
+_ASK_MAX_TOKENS_MAX = 8192
+
+
+def _resolve_ask_overrides(
+    cfg: dict,
+    style: Optional[str],
+    temperature: Optional[float],
+    max_tokens: Optional[int],
+    model: Optional[str],
+) -> dict:
+    """Clamp/allowlist per-request UI overrides, falling back to config defaults."""
+    effective_style = style if style in ASK_STYLES else ASK_STYLE_DEFAULT
+
+    if temperature is None:
+        effective_temp = 0.3
+    else:
+        try:
+            effective_temp = max(_ASK_TEMP_MIN, min(_ASK_TEMP_MAX, float(temperature)))
+        except (TypeError, ValueError):
+            effective_temp = 0.3
+
+    if max_tokens is None:
+        effective_max_tokens = int(cfg["max_tokens"])
+    else:
+        try:
+            effective_max_tokens = max(
+                _ASK_MAX_TOKENS_MIN,
+                min(_ASK_MAX_TOKENS_MAX, int(max_tokens)),
+            )
+        except (TypeError, ValueError):
+            effective_max_tokens = int(cfg["max_tokens"])
+
+    effective_model = (
+        model if (model and model in ASK_ALLOWED_MODELS) else cfg["model"]
+    )
+    return {
+        "style": effective_style,
+        "temperature": effective_temp,
+        "max_tokens": effective_max_tokens,
+        "model": effective_model,
+    }
+
+
 def ask_llm(
     question: str,
     domain: str,
     repo_root: Path = Path("."),
     include_candidates: bool = False,
     api_key: Optional[str] = None,
+    style: Optional[str] = None,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    model: Optional[str] = None,
 ) -> AskResult:
-    """Run the Ask agent. Never raises — errors are returned on AskResult."""
+    """Run the Ask agent. Never raises — errors are returned on AskResult.
+
+    ``style`` / ``temperature`` / ``max_tokens`` / ``model`` are optional UI
+    overrides. Invalid values silently fall back to safe defaults.
+    """
     started = time.monotonic()
     scope = "approved+candidates" if include_candidates else "approved"
 
@@ -450,12 +545,15 @@ def ask_llm(
             error=f"Failed to load agents.yaml: {exc}",
         )
 
+    ov = _resolve_ask_overrides(cfg, style, temperature, max_tokens, model)
+
     if not (question or "").strip():
         return AskResult(
             question=question, answer_md="", sections={n: "None" for n in ASK_SECTIONS},
-            cited_pages=[], model=cfg["model"], tokens_in=0, tokens_out=0,
+            cited_pages=[], model=ov["model"], tokens_in=0, tokens_out=0,
             duration_s=time.monotonic() - started, scope=scope,
             error="Empty question — type something to ask.",
+            style=ov["style"], temperature=ov["temperature"], max_tokens=ov["max_tokens"],
         )
 
     pages = collect_ask_context(
@@ -471,18 +569,20 @@ def ask_llm(
     if not effective_key:
         return AskResult(
             question=question, answer_md="", sections={n: "None" for n in ASK_SECTIONS},
-            cited_pages=pages, model=cfg["model"], tokens_in=0, tokens_out=0,
+            cited_pages=pages, model=ov["model"], tokens_in=0, tokens_out=0,
             duration_s=time.monotonic() - started, scope=scope,
             error="ANTHROPIC_API_KEY is not set — Ask cannot call Claude.",
+            style=ov["style"], temperature=ov["temperature"], max_tokens=ov["max_tokens"],
         )
 
-    prompt = build_ask_prompt(question, domain, pages, repo_root)
+    prompt = build_ask_prompt(question, domain, pages, repo_root, style=ov["style"])
 
     try:
         client = anthropic.Anthropic(api_key=effective_key)
         message = client.messages.create(
-            model=cfg["model"],
-            max_tokens=cfg["max_tokens"],
+            model=ov["model"],
+            max_tokens=ov["max_tokens"],
+            temperature=ov["temperature"],
             messages=[{"role": "user", "content": prompt}],
         )
         text = (message.content[0].text or "").strip()
@@ -492,9 +592,10 @@ def ask_llm(
     except Exception as exc:
         return AskResult(
             question=question, answer_md="", sections={n: "None" for n in ASK_SECTIONS},
-            cited_pages=pages, model=cfg["model"], tokens_in=0, tokens_out=0,
+            cited_pages=pages, model=ov["model"], tokens_in=0, tokens_out=0,
             duration_s=time.monotonic() - started, scope=scope,
             error=f"Claude API error: {exc}\n\n{traceback.format_exc(limit=3)}",
+            style=ov["style"], temperature=ov["temperature"], max_tokens=ov["max_tokens"],
         )
 
     sections = parse_ask_response(text)
@@ -503,10 +604,13 @@ def ask_llm(
         answer_md=text,
         sections=sections,
         cited_pages=pages,
-        model=cfg["model"],
+        model=ov["model"],
         tokens_in=tok_in,
         tokens_out=tok_out,
         duration_s=time.monotonic() - started,
         scope=scope,
         error=None,
+        style=ov["style"],
+        temperature=ov["temperature"],
+        max_tokens=ov["max_tokens"],
     )

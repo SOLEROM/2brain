@@ -3,15 +3,26 @@ from pathlib import Path
 from typing import Optional
 
 import markdown
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 
-from src.query import ASK_SECTIONS, ask_llm, confidence_label
+from src.query import (
+    ASK_ALLOWED_MODELS,
+    ASK_SECTIONS,
+    ASK_STYLES,
+    ASK_STYLE_DEFAULT,
+    ask_llm,
+    confidence_label,
+)
 from src.utils import append_line, now_iso
 
 router = APIRouter()
 
 MD_EXTENSIONS = ["tables", "fenced_code", "sane_lists", "nl2br"]
+
+
+def _truthy(v: Optional[str]) -> bool:
+    return (v or "").lower() in ("on", "1", "true", "yes")
 
 
 @router.get("/ask/{domain}", response_class=HTMLResponse)
@@ -21,26 +32,63 @@ async def ask_page(
     q: str = "",
     include_candidates: Optional[str] = None,
 ):
-    repo_root: Path = request.app.state.repo_root
     templates = request.app.state.templates
-
-    include_candidates_bool = include_candidates in ("on", "1", "true", "yes")
-
-    ask_ctx = None
-    if q.strip():
-        ask_ctx = _run_ask(
-            question=q,
-            domain=domain,
-            repo_root=repo_root,
-            include_candidates=include_candidates_bool,
-        )
-
+    # The page is now a JS-driven chat. Server-side render is just the shell;
+    # `q` in the URL is auto-submitted client-side so shareable links still work.
     return templates.TemplateResponse(request, "ask.html", {
         "domain": domain,
-        "question": q,
-        "include_candidates": include_candidates_bool,
-        "ask_ctx": ask_ctx,
+        "prefill_question": q,
+        "prefill_include_candidates": _truthy(include_candidates),
+        "ask_styles": list(ASK_STYLES.keys()),
+        "ask_style_default": ASK_STYLE_DEFAULT,
+        "ask_models": sorted(ASK_ALLOWED_MODELS),
     })
+
+
+def _parse_float(v: Optional[str]) -> Optional[float]:
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_int(v: Optional[str]) -> Optional[int]:
+    if v is None or v == "":
+        return None
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+@router.post("/ask/{domain}/api")
+async def ask_api(
+    request: Request,
+    domain: str,
+    q: str = Form(...),
+    include_candidates: Optional[str] = Form(None),
+    style: Optional[str] = Form(None),
+    temperature: Optional[str] = Form(None),
+    max_tokens: Optional[str] = Form(None),
+    model: Optional[str] = Form(None),
+):
+    """JSON endpoint used by the chat UI."""
+    repo_root: Path = request.app.state.repo_root
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="Empty question")
+    ctx = _run_ask(
+        question=q,
+        domain=domain,
+        repo_root=repo_root,
+        include_candidates=_truthy(include_candidates),
+        style=(style or None),
+        temperature=_parse_float(temperature),
+        max_tokens=_parse_int(max_tokens),
+        model=(model or None),
+    )
+    return JSONResponse(ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -67,12 +115,20 @@ def _run_ask(
     domain: str,
     repo_root: Path,
     include_candidates: bool,
+    style: Optional[str] = None,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    model: Optional[str] = None,
 ) -> dict:
     result = ask_llm(
         question=question,
         domain=domain,
         repo_root=repo_root,
         include_candidates=include_candidates,
+        style=style,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        model=model,
     )
 
     sections_rendered = {}
@@ -128,4 +184,7 @@ def _run_ask(
         "tokens_out": result.tokens_out,
         "duration_s": result.duration_s,
         "scope": result.scope,
+        "style": result.style,
+        "temperature": result.temperature,
+        "max_tokens": result.max_tokens,
     }

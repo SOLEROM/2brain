@@ -1,0 +1,23 @@
+name: lintAgent
+description: >
+  Scheduled wiki health check. Regenerates domains/<d>/indexes/* and flags
+  low-confidence pages, unresolved contradictions, orphans, stale pages,
+  stuck jobs, and index drift. Deterministic — no LLM call.
+
+# Recommended: daily. lint is cheap and only touches indexes/ + log.md.
+schedule: daily
+
+# work_scope has no effect — lint always re-scans the full tree. Left here
+# so the Agents UI form renders consistently with other agents.
+work_scope: all
+
+# Single-domain mode. To lint multiple domains in one run, remove `domain`
+# and set `domains: [edge-ai, robotics]`. If neither is set, all folders
+# under domains/ are linted.
+domain: edge-ai
+
+# Optional overrides for the thresholds in config/app.yaml → lint.
+# Leave unset to use the app-level defaults.
+# stale_days: 90
+# stuck_job_minutes: 10
+# low_confidence_threshold: 0.35

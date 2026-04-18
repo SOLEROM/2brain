@@ -352,3 +352,538 @@ def test_runner_defaults_work_scope_to_all(repo_root, monkeypatch):
     monkeypatch.setitem(AGENT_RUN_FNS, "no-scope", _run)
     run_agent("no-scope", repo_root)
     assert captured["scope"] == "all"
+
+
+# ---------------------------------------------------------------------------
+# digestAgent
+# ---------------------------------------------------------------------------
+
+from src.agents import digest_agent as digest_agent_mod
+from src.agents.seen import load_seen
+
+
+def _scaffold_raw(repo_root: Path, raw_id: str, *, domain_hint: str = "edge-ai"):
+    raw_dir = repo_root / "inbox" / "raw" / raw_id
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    (raw_dir / "source.md").write_text("# Source\nHello.\n", encoding="utf-8")
+    (raw_dir / "metadata.yaml").write_text(
+        yaml.dump({"id": raw_id, "title": raw_id, "domain_hint": domain_hint}),
+        encoding="utf-8",
+    )
+    return raw_dir
+
+
+def test_digest_agent_is_registered():
+    assert "digestAgent" in AGENT_RUN_FNS
+
+
+def test_digest_agent_requires_api_key(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "digestAgent", schedule="manual",
+                    config_extra={"domain": "edge-ai"})
+    _scaffold_raw(repo_root, "raw_1")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    result = run_agent("digestAgent", repo_root)
+    assert result.status == "failed"
+    assert "ANTHROPIC_API_KEY" in (result.error or "")
+
+
+def test_digest_agent_no_raws_skips_cleanly(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "digestAgent", schedule="manual",
+                    config_extra={"domain": "edge-ai"})
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    result = run_agent("digestAgent", repo_root)
+    assert result.status == "ok"
+    assert "Nothing to digest" in (result.message or "")
+
+
+def test_digest_agent_filters_by_domain_hint(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "digestAgent", schedule="manual",
+                    config_extra={"domain": "edge-ai",
+                                  "require_domain_hint_match": True,
+                                  "max_raws_per_run": 10})
+    _scaffold_raw(repo_root, "raw_match", domain_hint="edge-ai")
+    _scaffold_raw(repo_root, "raw_other", domain_hint="robotics")
+    _scaffold_raw(repo_root, "raw_blank", domain_hint="")
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    seen_raws: list[str] = []
+
+    def _fake_digest(raw_id, domain, repo_root):
+        seen_raws.append(raw_id)
+        return [f"{raw_id}.md"]
+
+    monkeypatch.setattr(digest_agent_mod, "digest_raw", _fake_digest)
+    result = run_agent("digestAgent", repo_root)
+    assert result.status == "ok"
+    assert seen_raws == ["raw_match"]
+
+
+def test_digest_agent_respects_max_raws_per_run(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "digestAgent", schedule="manual",
+                    config_extra={"domain": "edge-ai",
+                                  "max_raws_per_run": 2})
+    for i in range(5):
+        _scaffold_raw(repo_root, f"raw_{i}")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    calls: list[str] = []
+
+    def _fake(raw_id, domain, repo_root):
+        calls.append(raw_id)
+        return [f"{raw_id}.md"]
+
+    monkeypatch.setattr(digest_agent_mod, "digest_raw", _fake)
+    run_agent("digestAgent", repo_root)
+    assert len(calls) == 2
+
+
+def test_digest_agent_skips_seen_and_marks_on_success(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "digestAgent", schedule="manual",
+                    config_extra={"domain": "edge-ai", "work_scope": "new",
+                                  "max_raws_per_run": 10})
+    _scaffold_raw(repo_root, "raw_a")
+    _scaffold_raw(repo_root, "raw_b")
+    # Pre-seed raw_a in the seen ledger.
+    from src.agents.seen import save_seen
+    save_seen("digestAgent", repo_root, {"raw_a"})
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    calls: list[str] = []
+
+    def _fake(raw_id, domain, repo_root):
+        calls.append(raw_id)
+        return [f"{raw_id}.md"]
+
+    monkeypatch.setattr(digest_agent_mod, "digest_raw", _fake)
+    run_agent("digestAgent", repo_root)
+    assert calls == ["raw_b"]
+    # After success, raw_b is added to the ledger (raw_a already there).
+    assert load_seen("digestAgent", repo_root) == {"raw_a", "raw_b"}
+
+
+def test_digest_agent_failure_per_raw_does_not_abort_run(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "digestAgent", schedule="manual",
+                    config_extra={"domain": "edge-ai", "work_scope": "new",
+                                  "max_raws_per_run": 10})
+    _scaffold_raw(repo_root, "raw_ok")
+    _scaffold_raw(repo_root, "raw_err")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    def _fake(raw_id, domain, repo_root):
+        if raw_id == "raw_err":
+            raise RuntimeError("simulated LLM failure")
+        return [f"{raw_id}.md"]
+
+    monkeypatch.setattr(digest_agent_mod, "digest_raw", _fake)
+    result = run_agent("digestAgent", repo_root)
+    # Agent-run itself succeeds even though one raw failed — errors are captured.
+    assert result.status == "ok"
+    # Only the successful one is persisted in seen.
+    assert load_seen("digestAgent", repo_root) == {"raw_ok"}
+
+
+# ---------------------------------------------------------------------------
+# lintAgent
+# ---------------------------------------------------------------------------
+
+LINT_LOW_CONF_PAGE = """\
+---
+title: "Low Conf Page"
+domain: edge-ai
+type: concept
+status: approved
+confidence: 0.20
+sources: []
+created_at: "2026-04-16T12:00:00+00:00"
+updated_at: "2026-04-16T12:00:00+00:00"
+tags: []
+---
+# Low Conf Page
+body
+"""
+
+
+def _scaffold_domain(repo_root: Path, domain: str, *, with_low_conf_page: bool = False):
+    dom = repo_root / "domains" / domain
+    (dom / "concepts").mkdir(parents=True, exist_ok=True)
+    (dom / "indexes").mkdir(parents=True, exist_ok=True)
+    (repo_root / "candidates" / domain / "pending").mkdir(parents=True, exist_ok=True)
+    (dom / "index.md").write_text("# Index\n")
+    (dom / "log.md").write_text("# Log\n")
+    if with_low_conf_page:
+        (dom / "concepts" / "low.md").write_text(LINT_LOW_CONF_PAGE)
+
+
+def test_lint_agent_is_registered():
+    assert "lintAgent" in AGENT_RUN_FNS
+
+
+def test_lint_agent_no_domain_configured_and_no_folders_skips(repo_root):
+    _scaffold_agent(repo_root, "lintAgent", schedule="manual")
+    # Drop the default "domain: edge-ai" from the helper so resolver has nothing.
+    cfg_path = repo_root / "agents" / "lintAgent" / "config.yaml"
+    cfg_path.write_text(yaml.dump({
+        "name": "lintAgent",
+        "schedule": "manual",
+    }))
+    # No domains/<x>/ folders either (conftest creates empty domains/).
+    result = run_agent("lintAgent", repo_root)
+    assert result.status == "ok"
+    assert "No domains" in (result.message or "")
+
+
+def test_lint_agent_runs_single_domain_and_regenerates_indexes(repo_root):
+    _scaffold_agent(repo_root, "lintAgent", schedule="manual",
+                    config_extra={"domain": "edge-ai"})
+    _scaffold_domain(repo_root, "edge-ai", with_low_conf_page=True)
+
+    result = run_agent("lintAgent", repo_root)
+    assert result.status == "ok"
+
+    idx_dir = repo_root / "domains" / "edge-ai" / "indexes"
+    assert (idx_dir / "low-confidence.md").exists()
+    assert (idx_dir / "contradictions.md").exists()
+    assert (idx_dir / "orphans.md").exists()
+    assert (idx_dir / "stale-pages.md").exists()
+    assert "Low Conf Page" in (idx_dir / "low-confidence.md").read_text()
+    # Message reports the low-confidence count.
+    assert "low-conf=1" in (result.message or "")
+
+
+def test_lint_agent_supports_multi_domain_list(repo_root):
+    _scaffold_agent(repo_root, "lintAgent", schedule="manual",
+                    config_extra={"domains": ["edge-ai", "robotics"]})
+    _scaffold_domain(repo_root, "edge-ai")
+    _scaffold_domain(repo_root, "robotics")
+
+    result = run_agent("lintAgent", repo_root)
+    assert result.status == "ok"
+    # Both domains' indexes exist.
+    for dom in ("edge-ai", "robotics"):
+        assert (repo_root / "domains" / dom / "indexes" / "low-confidence.md").exists()
+    # Outputs list mentions both domains.
+    joined = " ".join(result.outputs)
+    assert "edge-ai" in joined and "robotics" in joined
+
+
+def test_lint_agent_auto_discovers_domains_when_unset(repo_root):
+    # Config with no `domain` or `domains` — agent should fall back to
+    # enumerating domains/<x>/ folders.
+    cfg_path = repo_root / "agents" / "lintAgent" / "config.yaml"
+    (repo_root / "agents" / "lintAgent").mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(yaml.dump({"name": "lintAgent", "schedule": "manual"}))
+    (repo_root / "agents" / "lintAgent" / "prompt.md").write_text("n/a")
+    _scaffold_domain(repo_root, "edge-ai")
+
+    result = run_agent("lintAgent", repo_root)
+    assert result.status == "ok"
+    assert (repo_root / "domains" / "edge-ai" / "indexes" / "low-confidence.md").exists()
+
+
+def test_lint_agent_does_not_require_api_key(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "lintAgent", schedule="manual",
+                    config_extra={"domain": "edge-ai"})
+    _scaffold_domain(repo_root, "edge-ai")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    result = run_agent("lintAgent", repo_root)
+    assert result.status == "ok"
+
+
+# ---------------------------------------------------------------------------
+# sourceDiscovery
+# ---------------------------------------------------------------------------
+
+from unittest.mock import MagicMock
+
+import src.agents.source_discovery as source_discovery_mod
+
+
+def _fake_claude_reply(text: str, tokens_in: int = 10, tokens_out: int = 20):
+    """Build a MagicMock that mimics anthropic's messages.create return."""
+    msg = MagicMock()
+    msg.content = [MagicMock(text=text)]
+    msg.usage = MagicMock(input_tokens=tokens_in, output_tokens=tokens_out)
+    return msg
+
+
+def _patch_claude(monkeypatch, module, reply):
+    """Swap in a fake Anthropic client whose messages.create returns `reply`."""
+    client = MagicMock()
+    client.messages.create.return_value = reply
+    monkeypatch.setattr(module.anthropic, "Anthropic", lambda api_key: client)
+    return client
+
+
+def test_source_discovery_is_registered():
+    assert "sourceDiscovery" in AGENT_RUN_FNS
+
+
+def test_source_discovery_requires_api_key(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "sourceDiscovery", schedule="manual",
+                    config_extra={"domain": "edge-ai"})
+    _scaffold_domain(repo_root, "edge-ai")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    result = run_agent("sourceDiscovery", repo_root)
+    assert result.status == "failed"
+    assert "ANTHROPIC_API_KEY" in (result.error or "")
+
+
+def test_source_discovery_requires_domain(repo_root, monkeypatch):
+    cfg_path = repo_root / "agents" / "sourceDiscovery"
+    cfg_path.mkdir(parents=True, exist_ok=True)
+    (cfg_path / "config.yaml").write_text(yaml.dump({
+        "name": "sourceDiscovery",
+        "schedule": "manual",
+    }))
+    (cfg_path / "prompt.md").write_text("please suggest sources")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    result = run_agent("sourceDiscovery", repo_root)
+    assert result.status == "failed"
+    assert "domain" in (result.error or "").lower()
+
+
+_SOURCE_DISCOVERY_REPLY = """```yaml
+suggestions:
+  - url: "https://vendor.example.com/datasheet-hailo8.pdf"
+    title: "Hailo-8 Datasheet"
+    why: "Primary source for peak TOPS numbers currently only cited from a blog."
+    suggested_domain: "edge-ai"
+    research_question: "What is the actual INT8 peak on Hailo-8?"
+    confidence: 0.82
+  - url: "https://arxiv.org/abs/2501.00001"
+    title: "Edge NPU Benchmark Survey 2026"
+    why: "Would fill the gap in cross-platform comparisons."
+    suggested_domain: "edge-ai"
+    research_question: "How do sub-5W NPUs compare head-to-head?"
+    confidence: 0.70
+```
+"""
+
+
+def test_source_discovery_writes_suggestions(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "sourceDiscovery", schedule="manual",
+                    config_extra={"domain": "edge-ai"})
+    _scaffold_domain(repo_root, "edge-ai", with_low_conf_page=True)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    _patch_claude(monkeypatch, source_discovery_mod,
+                  _fake_claude_reply(_SOURCE_DISCOVERY_REPLY))
+
+    result = run_agent("sourceDiscovery", repo_root)
+    assert result.status == "ok", result.error
+    sugg_path = repo_root / "domains" / "edge-ai" / "indexes" / "suggested-sources.md"
+    content = sugg_path.read_text()
+    assert "Hailo-8 Datasheet" in content
+    assert "https://vendor.example.com/datasheet-hailo8.pdf" in content
+    assert "Edge NPU Benchmark Survey 2026" in content
+    assert result.outputs == ["domains/edge-ai/indexes/suggested-sources.md"]
+    log_text = (repo_root / "domains" / "edge-ai" / "log.md").read_text()
+    assert "source-discovery" in log_text
+
+
+def test_source_discovery_dedups_against_existing_file(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "sourceDiscovery", schedule="manual",
+                    config_extra={"domain": "edge-ai"})
+    _scaffold_domain(repo_root, "edge-ai")
+    sugg_path = repo_root / "domains" / "edge-ai" / "indexes" / "suggested-sources.md"
+    sugg_path.write_text(
+        "# Existing\nhttps://vendor.example.com/datasheet-hailo8.pdf\n"
+    )
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    _patch_claude(monkeypatch, source_discovery_mod,
+                  _fake_claude_reply(_SOURCE_DISCOVERY_REPLY))
+
+    result = run_agent("sourceDiscovery", repo_root)
+    assert result.status == "ok"
+    content = sugg_path.read_text()
+    assert content.count("https://vendor.example.com/datasheet-hailo8.pdf") == 1
+    assert "https://arxiv.org/abs/2501.00001" in content
+
+
+def test_source_discovery_work_scope_new_filters_seen(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "sourceDiscovery", schedule="manual",
+                    config_extra={"domain": "edge-ai", "work_scope": "new"})
+    _scaffold_domain(repo_root, "edge-ai")
+    save_seen("sourceDiscovery", repo_root, {"https://arxiv.org/abs/2501.00001"})
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    _patch_claude(monkeypatch, source_discovery_mod,
+                  _fake_claude_reply(_SOURCE_DISCOVERY_REPLY))
+
+    result = run_agent("sourceDiscovery", repo_root)
+    assert result.status == "ok"
+    content = (repo_root / "domains" / "edge-ai" / "indexes"
+               / "suggested-sources.md").read_text()
+    assert "https://vendor.example.com/datasheet-hailo8.pdf" in content
+    assert "https://arxiv.org/abs/2501.00001" not in content
+    assert "https://vendor.example.com/datasheet-hailo8.pdf" in load_seen(
+        "sourceDiscovery", repo_root
+    )
+
+
+def test_source_discovery_empty_list_is_ok(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "sourceDiscovery", schedule="manual",
+                    config_extra={"domain": "edge-ai"})
+    _scaffold_domain(repo_root, "edge-ai")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    _patch_claude(monkeypatch, source_discovery_mod,
+                  _fake_claude_reply("```yaml\nsuggestions: []\n```"))
+
+    result = run_agent("sourceDiscovery", repo_root)
+    assert result.status == "ok"
+    assert "No new suggestions" in (result.message or "")
+    sugg_path = repo_root / "domains" / "edge-ai" / "indexes" / "suggested-sources.md"
+    assert not sugg_path.exists()
+
+
+def test_source_discovery_drops_invalid_entries(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "sourceDiscovery", schedule="manual",
+                    config_extra={"domain": "edge-ai"})
+    _scaffold_domain(repo_root, "edge-ai")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    bad_reply = """```yaml
+suggestions:
+  - url: ""
+    title: "No URL"
+  - url: "ftp://old.example.com/file"
+    title: "Wrong scheme"
+  - url: "https://good.example.com/x"
+    title: "Real one"
+    why: "good"
+    confidence: 0.5
+```
+"""
+    _patch_claude(monkeypatch, source_discovery_mod, _fake_claude_reply(bad_reply))
+    result = run_agent("sourceDiscovery", repo_root)
+    assert result.status == "ok"
+    content = (repo_root / "domains" / "edge-ai" / "indexes"
+               / "suggested-sources.md").read_text()
+    assert "https://good.example.com/x" in content
+    assert "ftp://old.example.com/file" not in content
+
+
+# ---------------------------------------------------------------------------
+# conflicAgent
+# ---------------------------------------------------------------------------
+
+import src.agents.conflic_agent as conflic_agent_mod
+
+
+def test_conflic_agent_is_registered():
+    assert "conflicAgent" in AGENT_RUN_FNS
+
+
+def test_conflic_agent_is_manual_only_on_disk():
+    """The shipped config ships with schedule: manual. If someone flips it
+    to a periodic cadence, this test should fail so we review the change."""
+    shipped = Path("agents/conflicAgent/config.yaml")
+    if not shipped.exists():
+        pytest.skip("conflicAgent folder not present in this tree")
+    cfg = yaml.safe_load(shipped.read_text())
+    assert cfg.get("schedule") == "manual"
+
+
+def test_conflic_agent_requires_api_key(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "conflicAgent", schedule="manual",
+                    config_extra={"domain": "edge-ai"})
+    _scaffold_domain(repo_root, "edge-ai")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    result = run_agent("conflicAgent", repo_root)
+    assert result.status == "failed"
+    assert "ANTHROPIC_API_KEY" in (result.error or "")
+
+
+_CONFLIC_REPLY = """```yaml
+conflicts:
+  - page_a: "VOXL 2"
+    page_b: "NNAPI Delegate Fallback"
+    claim_a: "VOXL 2 supports NNAPI acceleration."
+    claim_b: "VOXL 2 does not expose NNAPI."
+    conflict_type: "direct-contradiction"
+    explanation: "Both absolute claims cannot be true."
+    resolution_hint: "Check firmware version."
+    severity: 0.85
+  - page_a: "Hailo-8"
+    page_b: "Benchmark Survey"
+    claim_a: "Peak 26 TOPS INT8."
+    claim_b: "Peaks at 13 TOPS INT8."
+    conflict_type: "numeric-disagreement"
+    explanation: "Spread > 10% without context."
+    resolution_hint: "Confirm mode (peak vs sustained)."
+    severity: 0.72
+  - page_a: "A"
+    page_b: "B"
+    claim_a: "x"
+    claim_b: "y"
+    conflict_type: "evidence-strength"
+    explanation: "noise"
+    severity: 0.10
+```
+"""
+
+
+def test_conflic_agent_files_conflict_candidates(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "conflicAgent", schedule="manual",
+                    config_extra={"domain": "edge-ai"})
+    _scaffold_domain(repo_root, "edge-ai")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    _patch_claude(monkeypatch, conflic_agent_mod, _fake_claude_reply(_CONFLIC_REPLY))
+
+    result = run_agent("conflicAgent", repo_root)
+    assert result.status == "ok", result.error
+    pending = list((repo_root / "candidates" / "edge-ai" / "pending").iterdir())
+    assert len(pending) == 2
+    joined = "\n\n".join(p.read_text() for p in pending)
+    assert "VOXL 2" in joined
+    assert "Hailo-8" in joined
+    assert "type: contradiction-note" in joined
+    assert "candidate_operation: create" in joined
+    log_text = (repo_root / "domains" / "edge-ai" / "log.md").read_text()
+    assert "conflict-scan" in log_text
+
+
+def test_conflic_agent_drops_below_severity_threshold(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "conflicAgent", schedule="manual",
+                    config_extra={"domain": "edge-ai", "min_severity": 0.80})
+    _scaffold_domain(repo_root, "edge-ai")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    _patch_claude(monkeypatch, conflic_agent_mod, _fake_claude_reply(_CONFLIC_REPLY))
+
+    result = run_agent("conflicAgent", repo_root)
+    assert result.status == "ok"
+    pending = list((repo_root / "candidates" / "edge-ai" / "pending").iterdir())
+    assert len(pending) == 1
+
+
+def test_conflic_agent_dedups_via_seen_ledger(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "conflicAgent", schedule="manual",
+                    config_extra={"domain": "edge-ai"})
+    _scaffold_domain(repo_root, "edge-ai")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    _patch_claude(monkeypatch, conflic_agent_mod, _fake_claude_reply(_CONFLIC_REPLY))
+    first = run_agent("conflicAgent", repo_root)
+    assert first.status == "ok"
+    first_count = len(list((repo_root / "candidates" / "edge-ai" / "pending").iterdir()))
+    assert first_count == 2
+
+    _patch_claude(monkeypatch, conflic_agent_mod, _fake_claude_reply(_CONFLIC_REPLY))
+    second = run_agent("conflicAgent", repo_root)
+    assert second.status == "ok"
+    second_count = len(list((repo_root / "candidates" / "edge-ai" / "pending").iterdir()))
+    assert second_count == first_count
+    assert "No new conflicts" in (second.message or "")
+
+
+def test_conflic_agent_handles_empty_list(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "conflicAgent", schedule="manual",
+                    config_extra={"domain": "edge-ai"})
+    _scaffold_domain(repo_root, "edge-ai")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    _patch_claude(monkeypatch, conflic_agent_mod,
+                  _fake_claude_reply("```yaml\nconflicts: []\n```"))
+
+    result = run_agent("conflicAgent", repo_root)
+    assert result.status == "ok"
+    assert "No new conflicts" in (result.message or "")
+    pending = list((repo_root / "candidates" / "edge-ai" / "pending").iterdir())
+    assert pending == []

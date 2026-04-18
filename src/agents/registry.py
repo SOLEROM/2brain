@@ -33,6 +33,30 @@ def _register_builtin_agents() -> None:
     except Exception as exc:
         log.warning("failed to register deepSearch agent: %s", exc)
 
+    try:
+        from src.agents.digest_agent import run_digest_agent
+        AGENT_RUN_FNS["digestAgent"] = run_digest_agent
+    except Exception as exc:
+        log.warning("failed to register digestAgent: %s", exc)
+
+    try:
+        from src.agents.lint_agent import run_lint_agent
+        AGENT_RUN_FNS["lintAgent"] = run_lint_agent
+    except Exception as exc:
+        log.warning("failed to register lintAgent: %s", exc)
+
+    try:
+        from src.agents.source_discovery import run_source_discovery
+        AGENT_RUN_FNS["sourceDiscovery"] = run_source_discovery
+    except Exception as exc:
+        log.warning("failed to register sourceDiscovery: %s", exc)
+
+    try:
+        from src.agents.conflic_agent import run_conflic_agent
+        AGENT_RUN_FNS["conflicAgent"] = run_conflic_agent
+    except Exception as exc:
+        log.warning("failed to register conflicAgent: %s", exc)
+
 
 _register_builtin_agents()
 

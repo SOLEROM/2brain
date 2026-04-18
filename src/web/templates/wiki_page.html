@@ -36,6 +36,22 @@
 
     <h3>Actions</h3>
     <div class="sidebar-actions">
+      {% set _other_domains = (request.state.all_domains or []) | reject('equalto', domain) | list %}
+      {% if _other_domains %}
+      <form method="post" action="/wiki/{{ domain }}/move"
+            onsubmit="return confirm('Move this page to the selected domain? Subpath is preserved (e.g. concepts/foo.md stays in concepts/).');">
+        <input type="hidden" name="rel_path" value="{{ rel_path }}">
+        <label for="move-target" class="muted" style="display:block; font-size:12px; margin-bottom:4px;">Move to domain</label>
+        <div style="display:flex; gap:6px;">
+          <select id="move-target" name="target_domain" required>
+            {% for dom in _other_domains %}
+            <option value="{{ dom }}">{{ dom }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit">→ Move</button>
+        </div>
+      </form>
+      {% endif %}
       <form method="post" action="/wiki/{{ domain }}/delete"
             onsubmit="return confirm('Permanently delete this approved page? This cannot be undone (but git preserves history).');">
         <input type="hidden" name="rel_path" value="{{ rel_path }}">

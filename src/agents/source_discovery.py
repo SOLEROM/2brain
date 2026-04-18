@@ -1,0 +1,318 @@
+"""sourceDiscovery agent — proposes new URLs to ingest for a domain.
+
+Reads:  agents/sourceDiscovery/config.yaml (domain, model, budgets, max_suggestions)
+        agents/sourceDiscovery/prompt.md    (LLM prompt template)
+        domains/<d>/                        (approved wiki + optional candidates as context)
+Writes: domains/<d>/indexes/suggested-sources.md   (append-only suggestions index)
+        domains/<d>/log.md                         (append-only log entry)
+        agents/sourceDiscovery/seen.json            (URLs already suggested in prior runs)
+        jobs/completed/job_<...>.yaml               (agent-run record, via runner)
+
+The agent NEVER promotes a suggestion into the raw inbox — the pipeline is
+always agent suggestion → raw source → digest → candidate → human approval
+(CLAUDE.md §Source Discovery).
+"""
+from __future__ import annotations
+
+import os
+import re
+import traceback
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional
+
+import anthropic
+import yaml
+
+from src.query import collect_ask_context
+from src.utils import append_domain_log, atomic_write, now_iso, today_iso
+
+if TYPE_CHECKING:
+    from src.agents.registry import AgentMeta
+    from src.agents.seen import SeenTracker
+
+
+# ---------------------------------------------------------------------------
+# Response parsing
+# ---------------------------------------------------------------------------
+
+_YAML_FENCE_RE = re.compile(r"```(?:yaml|yml)?\s*\n(.*?)```", re.DOTALL)
+
+
+def _extract_yaml_block(text: str) -> str:
+    """Return the first fenced YAML block, or the full text if no fence found."""
+    m = _YAML_FENCE_RE.search(text)
+    if m:
+        return m.group(1).strip()
+    return text.strip()
+
+
+def _parse_suggestions(text: str) -> list[dict]:
+    """Parse the LLM's response into a list of suggestion dicts.
+
+    Accepts either a bare YAML list, a `suggestions:` key with a list value,
+    or a YAML-fenced version of either.
+    """
+    block = _extract_yaml_block(text)
+    try:
+        data = yaml.safe_load(block)
+    except yaml.YAMLError as exc:
+        raise RuntimeError(f"Failed to parse LLM response as YAML: {exc}") from exc
+
+    if isinstance(data, dict) and "suggestions" in data:
+        data = data["suggestions"]
+    if data is None:
+        return []
+    if not isinstance(data, list):
+        raise RuntimeError(
+            f"Expected a YAML list of suggestions, got {type(data).__name__}."
+        )
+    return [s for s in data if isinstance(s, dict)]
+
+
+def _normalize(suggestion: dict, default_domain: str) -> Optional[dict]:
+    """Clean one suggestion dict. Returns None if required fields are missing."""
+    url = str(suggestion.get("url") or "").strip()
+    title = str(suggestion.get("title") or "").strip()
+    if not url or not title:
+        return None
+    if not url.startswith(("http://", "https://")):
+        return None
+
+    try:
+        conf = float(suggestion.get("confidence", 0.5))
+    except (TypeError, ValueError):
+        conf = 0.5
+    conf = max(0.0, min(1.0, conf))
+
+    return {
+        "url": url,
+        "title": title,
+        "why": str(suggestion.get("why") or "").strip(),
+        "suggested_domain": str(
+            suggestion.get("suggested_domain") or default_domain
+        ).strip() or default_domain,
+        "research_question": str(suggestion.get("research_question") or "").strip(),
+        "confidence": conf,
+    }
+
+
+# ---------------------------------------------------------------------------
+# suggested-sources.md reader / writer
+# ---------------------------------------------------------------------------
+
+_URL_RE = re.compile(r"https?://[^\s)>\]]+")
+
+
+def _read_existing_urls(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    return set(_URL_RE.findall(path.read_text(encoding="utf-8")))
+
+
+def _format_entry(s: dict) -> str:
+    lines = [
+        f"- **{s['title']}**",
+        f"  URL: {s['url']}",
+    ]
+    if s.get("why"):
+        lines.append(f"  Why: {s['why']}")
+    lines.append(f"  Suggested domain: {s['suggested_domain']}")
+    if s.get("research_question"):
+        lines.append(f"  Research question: {s['research_question']}")
+    lines.append(f"  Confidence: {s['confidence']:.2f}")
+    lines.append(f"  Discovered: {today_iso()}")
+    return "\n".join(lines)
+
+
+def _append_suggestions(path: Path, domain: str, suggestions: list[dict]) -> None:
+    """Append a new dated section with these suggestions. Creates file if missing."""
+    now = now_iso()
+    header = f"\n## {now} ({len(suggestions)} new)\n\n"
+    body = "\n\n".join(_format_entry(s) for s in suggestions) + "\n"
+
+    if path.exists():
+        existing = path.read_text(encoding="utf-8")
+        new_content = existing.rstrip() + "\n" + header + body
+    else:
+        new_content = (
+            f"# Suggested Sources — {domain}\n\n"
+            "Auto-generated by the sourceDiscovery agent. To ingest a "
+            "suggestion, copy its URL into the Ingest form. Do not edit "
+            "this file manually.\n"
+            + header
+            + body
+        )
+    atomic_write(path, new_content)
+
+
+# ---------------------------------------------------------------------------
+# Prompt + context helpers (mirrors deep_search.py)
+# ---------------------------------------------------------------------------
+
+def _substitute(template: str, **values: str) -> str:
+    out = template
+    for k, v in values.items():
+        out = out.replace("{" + k + "}", v)
+    return out
+
+
+def _render_context_block(pages) -> str:
+    if not pages:
+        return "(no wiki pages available — the domain may be empty)"
+    blocks: list[str] = []
+    for p in pages:
+        label = "APPROVED" if p.status == "approved" else "CANDIDATE"
+        blocks.append(
+            f"### [{label}] {p.title}  path=`{p.path}`  confidence={p.confidence:.2f}\n"
+            f"{p.body}\n\n---"
+        )
+    return "\n\n".join(blocks)
+
+
+# ---------------------------------------------------------------------------
+# Main run function
+# ---------------------------------------------------------------------------
+
+def run_source_discovery(
+    *,
+    meta: "AgentMeta",
+    repo_root: Path,
+    job_id: str,
+    question_override: Optional[str] = None,
+    work_scope: str = "all",
+    seen: Optional["SeenTracker"] = None,
+    **_ignored,
+) -> dict:
+    """Execute one sourceDiscovery run. Returns {message, outputs, ...}."""
+    domain = str(meta.config.get("domain") or "").strip()
+    if not domain:
+        raise ValueError("sourceDiscovery requires `domain` in config.yaml.")
+
+    model = str(meta.config.get("model") or "claude-sonnet-4-6")
+    max_tokens = int(meta.config.get("max_tokens", 2048))
+    max_pages = int(meta.config.get("max_pages", 20))
+    max_chars = int(meta.config.get("max_context_chars", 40_000))
+    max_suggestions = int(meta.config.get("max_suggestions_per_run", 10))
+    include_candidates = bool(meta.config.get("include_candidates", True))
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY is not set — sourceDiscovery cannot call Claude."
+        )
+
+    if not meta.prompt.strip():
+        raise RuntimeError("prompt.md is empty — agent cannot run without a prompt template.")
+
+    # A question override from the /agents run form can narrow the focus
+    # ("focus on power-efficiency benchmarks"); otherwise the prompt asks
+    # for a general survey.
+    focus = (question_override or meta.config.get("focus") or "").strip()
+
+    pages = collect_ask_context(
+        question=focus or f"open research questions and gaps in {domain}",
+        domain=domain,
+        repo_root=repo_root,
+        include_candidates=include_candidates,
+        max_pages=max_pages,
+        max_chars=max_chars,
+    )
+
+    prompt = _substitute(
+        meta.prompt,
+        domain=domain,
+        now=now_iso(),
+        max_suggestions=str(max_suggestions),
+        focus=focus or "(none — survey the whole domain)",
+    )
+    user_msg = (
+        f"{prompt}\n\n"
+        f"## Wiki pages (ranked by relevance)\n\n{_render_context_block(pages)}\n"
+    )
+
+    client = anthropic.Anthropic(api_key=api_key)
+    try:
+        message = client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            f"Claude API error: {exc}\n\n{traceback.format_exc(limit=3)}"
+        ) from exc
+
+    text = (message.content[0].text or "").strip()
+    if not text:
+        raise RuntimeError("Claude returned empty content.")
+
+    raw_suggestions = _parse_suggestions(text)
+    normalized = [n for n in (_normalize(s, domain) for s in raw_suggestions) if n]
+
+    # Dedup by URL against (a) the existing file and (b) the seen ledger
+    # when work_scope=new.
+    sugg_path = repo_root / "domains" / domain / "indexes" / "suggested-sources.md"
+    existing_urls = _read_existing_urls(sugg_path)
+    filter_ledger = work_scope == "new" and seen is not None
+
+    fresh: list[dict] = []
+    kept_urls: set[str] = set()
+    for s in normalized:
+        url = s["url"]
+        if url in existing_urls or url in kept_urls:
+            continue
+        if filter_ledger and url in seen.initial:
+            continue
+        fresh.append(s)
+        kept_urls.add(url)
+        if len(fresh) >= max_suggestions:
+            break
+
+    usage = getattr(message, "usage", None)
+    tokens_in = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
+    tokens_out = int(getattr(usage, "output_tokens", 0) or 0) if usage else 0
+
+    if not fresh:
+        msg = (
+            f"No new suggestions — LLM returned {len(raw_suggestions)}, "
+            f"{len(raw_suggestions) - len(normalized)} invalid, "
+            f"{len(normalized) - len(fresh)} already seen. "
+            f"(tokens {tokens_in}→{tokens_out})"
+        )
+        return {
+            "message": msg,
+            "outputs": [],
+            "domain": domain,
+            "work_scope": work_scope,
+            "skipped": True,
+            "suggestions_returned": len(raw_suggestions),
+            "suggestions_new": 0,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+        }
+
+    _append_suggestions(sugg_path, domain, fresh)
+    append_domain_log(
+        repo_root, domain, "source-discovery",
+        f"{len(fresh)} new suggestion(s) appended to indexes/suggested-sources.md",
+    )
+
+    if seen is not None:
+        seen.mark_many(s["url"] for s in fresh)
+
+    rel_output = f"domains/{domain}/indexes/suggested-sources.md"
+    return {
+        "message": (
+            f"Filed {len(fresh)} new source suggestion(s) → {rel_output} "
+            f"(returned={len(raw_suggestions)}, domain={domain}, "
+            f"tokens {tokens_in}→{tokens_out})"
+        ),
+        "outputs": [rel_output],
+        "domain": domain,
+        "work_scope": work_scope,
+        "suggestions_returned": len(raw_suggestions),
+        "suggestions_new": len(fresh),
+        "suggestions": fresh,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+    }

@@ -1,0 +1,9 @@
+last_run_at: '2026-04-18T18:56:09+00:00'
+last_status: ok
+last_duration_s: 32.43
+last_message: Filed 10 new source suggestion(s) → domains/edge-ai/indexes/suggested-sources.md
+  (returned=10, domain=edge-ai, tokens 4483→1577)
+last_job_id: job_20260418_185609_agent-sourceDiscovery_f7d52a1d
+last_outputs:
+- domains/edge-ai/indexes/suggested-sources.md
+last_error: null

@@ -2,104 +2,514 @@
 {% set nav_active = 'ask' %}
 {% block title %}Ask — {{ domain }}{% endblock %}
 {% block content %}
-<h1>Ask</h1>
+<div class="row" style="justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 10px; margin-bottom: 6px;">
+  <h1 style="margin: 0;">Ask</h1>
+  <div class="row" style="gap: 8px;">
+    <button type="button" id="ask-export" class="btn-secondary" disabled title="Download chat as Markdown">⬇ Export</button>
+    <button type="button" id="ask-clear"  class="btn-secondary" disabled title="Delete all chat history for this domain">🗑 Clear</button>
+  </div>
+</div>
 <p class="page-subtitle">
-  Ask a question grounded in the <strong>approved</strong> wiki for
-  <code>{{ domain }}</code>. The agent cites every claim with
-  <code>[APPROVED]</code> or <code>[CANDIDATE]</code>.
+  Ask questions grounded in the <strong>approved</strong> wiki for
+  <code>{{ domain }}</code>. History is saved in your browser
+  (<code>localStorage</code>) — it survives refresh but stays on this device.
 </p>
 
-<section class="card ask-bar" style="padding: 14px 16px; margin-bottom: 18px;">
-  <form method="get" action="/ask/{{ domain }}">
+<section id="ask-chat" class="ask-chat" aria-live="polite"></section>
+
+<section class="card ask-bar ask-composer">
+  <form id="ask-form" autocomplete="off">
     <div class="form-group" style="margin: 0 0 10px;">
       <label for="ask-input" class="muted" style="font-size: 13px;">Your question</label>
-      <textarea id="ask-input" name="q" rows="4" autofocus
-                placeholder="e.g. What do we know about NNAPI fallback modes on VOXL 2?">{{ question }}</textarea>
+      <textarea id="ask-input" name="q" rows="3" autofocus
+                placeholder="e.g. What do we know about NNAPI fallback modes on VOXL 2? (⌘/Ctrl+Enter to send)"></textarea>
     </div>
+
+    <details id="ask-settings" class="ask-settings">
+      <summary>
+        <span>⚙ Model settings</span>
+        <span id="ask-settings-summary" class="muted"></span>
+      </summary>
+      <div class="ask-settings-grid">
+        <div class="form-group">
+          <label class="muted" for="ask-style">Style</label>
+          <select id="ask-style" name="style">
+            {% for s in ask_styles %}
+            <option value="{{ s }}" {% if s == ask_style_default %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+          <span class="form-hint">
+            <em>concise</em> = tight bullets · <em>balanced</em> = default ·
+            <em>informative</em> = deeper context
+          </span>
+        </div>
+        <div class="form-group">
+          <label class="muted" for="ask-temperature">
+            Temperature <span id="ask-temperature-value">0.3</span>
+          </label>
+          <input type="range" id="ask-temperature" name="temperature"
+                 min="0" max="1" step="0.05" value="0.3">
+          <span class="form-hint">0 = deterministic / factual · 1 = most creative</span>
+        </div>
+        <div class="form-group">
+          <label class="muted" for="ask-max-tokens">Max response tokens</label>
+          <select id="ask-max-tokens" name="max_tokens">
+            <option value="512">512 — very short</option>
+            <option value="1024">1024 — short</option>
+            <option value="2048" selected>2048 — default</option>
+            <option value="4096">4096 — long</option>
+            <option value="8192">8192 — max</option>
+          </select>
+          <span class="form-hint">Caps the answer length. Longer = higher cost.</span>
+        </div>
+        <div class="form-group">
+          <label class="muted" for="ask-model">Model</label>
+          <select id="ask-model" name="model">
+            <option value="">(use config default)</option>
+            {% for m in ask_models %}
+            <option value="{{ m }}">{{ m }}</option>
+            {% endfor %}
+          </select>
+          <span class="form-hint">Opus = deepest · Sonnet = balanced · Haiku = fastest/cheapest</span>
+        </div>
+      </div>
+      <div class="row" style="justify-content: flex-end; margin-top: 8px;">
+        <button type="button" id="ask-settings-reset" class="btn-secondary" style="font-size: 12px;">Reset to defaults</button>
+      </div>
+    </details>
+
     <div class="row" style="gap: 14px; flex-wrap: wrap; align-items: center; justify-content: space-between;">
       <label class="muted" style="font-size: 13px;">
-        <input type="checkbox" name="include_candidates" value="on"
-               {% if include_candidates %}checked{% endif %}>
+        <input type="checkbox" id="ask-include-candidates" name="include_candidates" value="on">
         Include pending candidates (labelled <code>[CANDIDATE]</code>)
       </label>
       <div class="row" style="gap: 8px;">
-        {% if question %}
-          <a href="/ask/{{ domain }}" class="btn-secondary">Clear</a>
-        {% endif %}
-        <button type="submit" class="btn">Ask</button>
+        <button type="submit" id="ask-submit" class="btn">Ask</button>
       </div>
     </div>
   </form>
 </section>
 
-{% if ask_ctx %}
-  {% if ask_ctx.error %}
-  <div class="card error ask-answer" style="border-color: var(--c-danger); background: var(--c-danger-bg, var(--c-surface));">
-    <h3 style="margin: 0 0 6px 0; color: var(--c-danger);">Ask failed</h3>
-    <pre style="white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 13px;">{{ ask_ctx.error }}</pre>
-    <p class="muted" style="margin: 10px 0 0; font-size: 12px;">
-      Check <code>ANTHROPIC_API_KEY</code> and
-      <code>config/agents.yaml → query_agent.model</code>.
-    </p>
-  </div>
-  {% else %}
-  <div class="ask-answer">
-    <div class="row" style="justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px;">
-      <h3 style="margin: 0;">Agent answer</h3>
-      <span class="badge badge-candidate" style="font-size: 11px;">LLM</span>
-    </div>
-    <p class="muted" style="margin: 0 0 14px; font-size: 13px;">
-      <strong>Q:</strong> {{ ask_ctx.question }}
-    </p>
-
-    {% for name in ["Answer", "Candidate Additions", "Conflicts / Uncertainty", "Suggested Next Actions"] %}
-      {% set s = ask_ctx.sections[name] %}
-      <div class="ask-section">
-        <h4 style="margin: 0 0 4px;">{{ name }}</h4>
-        {% if s.is_empty %}
-          <p class="muted" style="margin: 0;">None</p>
-        {% else %}
-          <div class="md-body">{{ s.html | safe }}</div>
-        {% endif %}
+<template id="ask-turn-template">
+  <article class="ask-turn" data-role="">
+    <div class="ask-turn-user">
+      <div class="ask-bubble ask-bubble-user">
+        <div class="ask-bubble-label">You</div>
+        <div class="ask-bubble-body"></div>
       </div>
-    {% endfor %}
-
-    {% if ask_ctx.cited %}
-    <div class="ask-sources">
-      <div class="muted" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
-        Pages used ({{ ask_ctx.cited|length }})
-      </div>
-      {% for c in ask_ctx.cited %}
-      <div class="row" style="gap: 8px; align-items: baseline; flex-wrap: wrap;">
-        {% if c.is_approved %}
-          <span class="badge badge-approved">APPROVED</span>
-        {% else %}
-          <span class="badge badge-candidate">CANDIDATE</span>
-        {% endif %}
-        <a href="{{ c.link }}">{{ c.title }}</a>
-        <span class="badge badge-{{ c.confidence_label | lower | replace(' ', '-') }}">
-          {{ c.confidence_label }} · {{ "%.2f"|format(c.confidence) }}
-        </span>
-        <code style="font-size: 11px;">{{ c.rel_path }}</code>
-      </div>
-      {% endfor %}
     </div>
-    {% endif %}
-
-    <div class="ask-meta">
-      model <code>{{ ask_ctx.model }}</code>
-      · tokens {{ ask_ctx.tokens_in }}→{{ ask_ctx.tokens_out }}
-      · {{ "%.1f"|format(ask_ctx.duration_s) }}s
-      · scope <code>{{ ask_ctx.scope }}</code>
+    <div class="ask-turn-assistant">
+      <div class="ask-bubble ask-bubble-assistant">
+        <div class="ask-bubble-label">Agent</div>
+        <div class="ask-bubble-body">
+          <div class="ask-sections"></div>
+          <div class="ask-cited"></div>
+          <div class="ask-meta-line"></div>
+        </div>
+      </div>
     </div>
-  </div>
+  </article>
+</template>
+
+<script>
+(function () {
+  const DOMAIN = {{ domain | tojson }};
+  const STORAGE_KEY = "2brain-ask-history:" + DOMAIN;
+  const SETTINGS_KEY = "2brain-ask-settings:" + DOMAIN;
+  const SECTION_NAMES = ["Answer", "Candidate Additions", "Conflicts / Uncertainty", "Suggested Next Actions"];
+  const DEFAULT_SETTINGS = {
+    style: {{ ask_style_default | tojson }},
+    temperature: 0.3,
+    max_tokens: 2048,
+    model: "",
+  };
+
+  const chatEl       = document.getElementById("ask-chat");
+  const formEl       = document.getElementById("ask-form");
+  const inputEl      = document.getElementById("ask-input");
+  const includeEl    = document.getElementById("ask-include-candidates");
+  const submitEl     = document.getElementById("ask-submit");
+  const clearEl      = document.getElementById("ask-clear");
+  const exportEl     = document.getElementById("ask-export");
+  const turnTemplate = document.getElementById("ask-turn-template");
+
+  const styleEl      = document.getElementById("ask-style");
+  const tempEl       = document.getElementById("ask-temperature");
+  const tempValueEl  = document.getElementById("ask-temperature-value");
+  const maxTokEl     = document.getElementById("ask-max-tokens");
+  const modelEl      = document.getElementById("ask-model");
+  const settingsSummaryEl = document.getElementById("ask-settings-summary");
+  const settingsResetEl   = document.getElementById("ask-settings-reset");
+
+  // --- model settings ----------------------------------------------------
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if (!raw) return Object.assign({}, DEFAULT_SETTINGS);
+      const parsed = JSON.parse(raw) || {};
+      return Object.assign({}, DEFAULT_SETTINGS, parsed);
+    } catch (e) { return Object.assign({}, DEFAULT_SETTINGS); }
+  }
+  function saveSettings(s) {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) {}
+  }
+  function applySettingsToForm(s) {
+    styleEl.value  = s.style || DEFAULT_SETTINGS.style;
+    tempEl.value   = String(s.temperature ?? DEFAULT_SETTINGS.temperature);
+    tempValueEl.textContent = Number(tempEl.value).toFixed(2);
+    maxTokEl.value = String(s.max_tokens || DEFAULT_SETTINGS.max_tokens);
+    modelEl.value  = s.model || "";
+    updateSettingsSummary();
+  }
+  function readSettingsFromForm() {
+    return {
+      style: styleEl.value,
+      temperature: Number(tempEl.value),
+      max_tokens: parseInt(maxTokEl.value, 10) || DEFAULT_SETTINGS.max_tokens,
+      model: modelEl.value || "",
+    };
+  }
+  function updateSettingsSummary() {
+    const s = readSettingsFromForm();
+    const bits = [
+      s.style,
+      "T=" + Number(s.temperature).toFixed(2),
+      s.max_tokens + "t",
+    ];
+    if (s.model) bits.push(s.model.replace(/^claude-/, ""));
+    settingsSummaryEl.textContent = "· " + bits.join(" · ");
+  }
+  function persistFromForm() {
+    saveSettings(readSettingsFromForm());
+    updateSettingsSummary();
+  }
+  [styleEl, tempEl, maxTokEl, modelEl].forEach(el =>
+    el.addEventListener("change", persistFromForm)
+  );
+  tempEl.addEventListener("input", () => {
+    tempValueEl.textContent = Number(tempEl.value).toFixed(2);
+    updateSettingsSummary();
+  });
+  settingsResetEl.addEventListener("click", () => {
+    applySettingsToForm(DEFAULT_SETTINGS);
+    saveSettings(DEFAULT_SETTINGS);
+  });
+
+  applySettingsToForm(loadSettings());
+
+  // --- persistence -------------------------------------------------------
+  function loadTurns() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) { return []; }
+  }
+  function saveTurns(turns) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(turns)); }
+    catch (e) { console.warn("ask: failed to persist history", e); }
+  }
+  function updateToolbar() {
+    const hasTurns = loadTurns().length > 0;
+    clearEl.disabled = !hasTurns;
+    exportEl.disabled = !hasTurns;
+  }
+
+  // --- rendering ---------------------------------------------------------
+  function escapeHtml(s) {
+    return String(s || "").replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[c]));
+  }
+
+  function renderAssistant(bodyEl, payload) {
+    const sectionsEl = bodyEl.querySelector(".ask-sections");
+    const citedEl    = bodyEl.querySelector(".ask-cited");
+    const metaEl     = bodyEl.querySelector(".ask-meta-line");
+
+    sectionsEl.innerHTML = "";
+    citedEl.innerHTML = "";
+    metaEl.innerHTML = "";
+
+    if (payload.error) {
+      const err = document.createElement("div");
+      err.className = "ask-error";
+      err.innerHTML = '<strong>Ask failed.</strong> <pre>' + escapeHtml(payload.error) + '</pre>' +
+                      '<p class="muted" style="font-size:12px;margin:6px 0 0;">Check <code>ANTHROPIC_API_KEY</code> and <code>config/agents.yaml → query_agent.model</code>.</p>';
+      sectionsEl.appendChild(err);
+      return;
+    }
+
+    for (const name of SECTION_NAMES) {
+      const s = (payload.sections || {})[name] || { is_empty: true, html: "" };
+      const wrap = document.createElement("div");
+      wrap.className = "ask-section";
+      const h = document.createElement("h4");
+      h.textContent = name;
+      wrap.appendChild(h);
+      if (s.is_empty) {
+        const p = document.createElement("p");
+        p.className = "muted";
+        p.style.margin = "0";
+        p.textContent = "None";
+        wrap.appendChild(p);
+      } else {
+        const body = document.createElement("div");
+        body.className = "md-body";
+        body.innerHTML = s.html;
+        wrap.appendChild(body);
+      }
+      sectionsEl.appendChild(wrap);
+    }
+
+    if (payload.cited && payload.cited.length) {
+      const header = document.createElement("div");
+      header.className = "muted";
+      header.style.cssText = "font-size:12px; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;";
+      header.textContent = "Pages used (" + payload.cited.length + ")";
+      citedEl.appendChild(header);
+      for (const c of payload.cited) {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.style.cssText = "gap:8px; align-items:baseline; flex-wrap:wrap;";
+        const badge = c.is_approved
+          ? '<span class="badge badge-approved">APPROVED</span>'
+          : '<span class="badge badge-candidate">CANDIDATE</span>';
+        const confLbl = (c.confidence_label || "").toLowerCase().replace(/\s+/g, "-");
+        row.innerHTML =
+          badge +
+          ' <a href="' + escapeHtml(c.link) + '">' + escapeHtml(c.title) + '</a> ' +
+          '<span class="badge badge-' + escapeHtml(confLbl) + '">' +
+          escapeHtml(c.confidence_label) + ' · ' + Number(c.confidence || 0).toFixed(2) + '</span> ' +
+          '<code style="font-size:11px;">' + escapeHtml(c.rel_path) + '</code>';
+        citedEl.appendChild(row);
+      }
+    }
+
+    const bits = [
+      'model <code>' + escapeHtml(payload.model || "") + '</code>',
+      'tokens ' + (payload.tokens_in || 0) + '→' + (payload.tokens_out || 0),
+      Number(payload.duration_s || 0).toFixed(1) + 's',
+      'scope <code>' + escapeHtml(payload.scope || "") + '</code>',
+    ];
+    if (payload.style) bits.push('style <code>' + escapeHtml(payload.style) + '</code>');
+    if (payload.temperature != null) bits.push('T=' + Number(payload.temperature).toFixed(2));
+    if (payload.max_tokens)  bits.push('cap ' + payload.max_tokens + 't');
+    metaEl.innerHTML = bits.join(' · ');
+  }
+
+  function renderLoading(bodyEl) {
+    const sectionsEl = bodyEl.querySelector(".ask-sections");
+    const citedEl    = bodyEl.querySelector(".ask-cited");
+    const metaEl     = bodyEl.querySelector(".ask-meta-line");
+    citedEl.innerHTML = "";
+    metaEl.innerHTML = "";
+    sectionsEl.innerHTML =
+      '<div class="ask-loading" role="status" aria-label="Thinking">' +
+      '  <span class="ask-spinner"></span>' +
+      '  <span class="ask-loading-text">Asking the model — this can take several seconds…</span>' +
+      '  <span class="ask-dots"><span></span><span></span><span></span></span>' +
+      '</div>';
+  }
+
+  function buildTurnNode(turn) {
+    const node = turnTemplate.content.firstElementChild.cloneNode(true);
+    node.dataset.ts = turn.ts || "";
+    node.querySelector(".ask-turn-user .ask-bubble-body").textContent = turn.question || "";
+    const assistBody = node.querySelector(".ask-turn-assistant .ask-bubble-body");
+    if (turn.pending) {
+      renderLoading(assistBody);
+    } else {
+      renderAssistant(assistBody, turn.response || {});
+    }
+    return node;
+  }
+
+  function renderAll() {
+    const turns = loadTurns();
+    chatEl.innerHTML = "";
+    if (!turns.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.innerHTML = '<p class="muted">No chat yet. Ask a question below. Looking for keyword search instead? Use <a href="/query/' + encodeURIComponent(DOMAIN) + '">Query</a>.</p>';
+      chatEl.appendChild(empty);
+    } else {
+      for (const t of turns) chatEl.appendChild(buildTurnNode(t));
+    }
+    updateToolbar();
+  }
+
+  function scrollLastIntoView() {
+    const last = chatEl.lastElementChild;
+    if (last && last.scrollIntoView) last.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // --- submission --------------------------------------------------------
+  let inFlight = false;
+
+  async function submitQuestion(question) {
+    if (inFlight) return;
+    question = (question || "").trim();
+    if (!question) return;
+
+    inFlight = true;
+    submitEl.disabled = true;
+    submitEl.textContent = "Asking…";
+    submitEl.classList.add("is-loading");
+
+    const turns = loadTurns();
+    const turn = {
+      ts: new Date().toISOString(),
+      question: question,
+      include_candidates: includeEl.checked,
+      pending: true,
+    };
+    turns.push(turn);
+    saveTurns(turns);
+    renderAll();
+    scrollLastIntoView();
+
+    let responsePayload = null;
+    let errorPayload = null;
+    try {
+      const body = new URLSearchParams();
+      body.set("q", question);
+      if (includeEl.checked) body.set("include_candidates", "on");
+      const s = readSettingsFromForm();
+      body.set("style", s.style);
+      body.set("temperature", String(s.temperature));
+      body.set("max_tokens", String(s.max_tokens));
+      if (s.model) body.set("model", s.model);
+      const resp = await fetch("/ask/" + encodeURIComponent(DOMAIN) + "/api", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      });
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => "");
+        errorPayload = "HTTP " + resp.status + (txt ? ": " + txt.slice(0, 400) : "");
+      } else {
+        responsePayload = await resp.json();
+      }
+    } catch (e) {
+      errorPayload = String(e && e.message ? e.message : e);
+    }
+
+    const all = loadTurns();
+    const match = all.slice().reverse().find(t => t.pending && t.question === question);
+    if (match) {
+      match.pending = false;
+      match.response = responsePayload || { error: errorPayload || "Unknown error" };
+    }
+    saveTurns(all);
+    renderAll();
+    scrollLastIntoView();
+
+    inFlight = false;
+    submitEl.disabled = false;
+    submitEl.textContent = "Ask";
+    submitEl.classList.remove("is-loading");
+    inputEl.value = "";
+    inputEl.focus();
+  }
+
+  // --- export ------------------------------------------------------------
+  function exportMarkdown() {
+    const turns = loadTurns();
+    if (!turns.length) return;
+    const lines = [
+      "# 2brain — Ask history",
+      "",
+      "- Domain: `" + DOMAIN + "`",
+      "- Exported: " + new Date().toISOString(),
+      "- Turns: " + turns.length,
+      "",
+      "---",
+      "",
+    ];
+    turns.forEach((t, i) => {
+      lines.push("## Q" + (i + 1));
+      if (t.ts) lines.push("*" + t.ts + "*");
+      lines.push("");
+      lines.push("> " + (t.question || "").replace(/\n/g, "\n> "));
+      lines.push("");
+      if (t.pending) {
+        lines.push("_(still waiting for a response)_");
+      } else if (t.response && t.response.error) {
+        lines.push("**Error:** " + t.response.error);
+      } else if (t.response) {
+        for (const name of SECTION_NAMES) {
+          const s = (t.response.sections || {})[name];
+          lines.push("### " + name);
+          lines.push((s && !s.is_empty && s.raw) ? s.raw : "None");
+          lines.push("");
+        }
+        const cited = t.response.cited || [];
+        if (cited.length) {
+          lines.push("### Pages used");
+          for (const c of cited) {
+            const tag = c.is_approved ? "[APPROVED]" : "[CANDIDATE]";
+            lines.push("- " + tag + " " + (c.title || "") +
+                       " (conf " + Number(c.confidence || 0).toFixed(2) + ") — `" +
+                       (c.rel_path || "") + "`");
+          }
+          lines.push("");
+        }
+        const meta = [
+          t.response.model ? ("model=" + t.response.model) : "",
+          (t.response.tokens_in != null) ? ("tokens=" + t.response.tokens_in + "→" + t.response.tokens_out) : "",
+          (t.response.duration_s != null) ? ("duration=" + Number(t.response.duration_s).toFixed(1) + "s") : "",
+          t.response.scope ? ("scope=" + t.response.scope) : "",
+          t.response.style ? ("style=" + t.response.style) : "",
+          (t.response.temperature != null) ? ("temperature=" + Number(t.response.temperature).toFixed(2)) : "",
+          t.response.max_tokens ? ("max_tokens=" + t.response.max_tokens) : "",
+        ].filter(Boolean).join(" · ");
+        if (meta) lines.push("_" + meta + "_");
+      }
+      lines.push("");
+      lines.push("---");
+      lines.push("");
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().replace(/[:]/g, "-").slice(0, 19);
+    a.href = url;
+    a.download = "2brain-ask-" + DOMAIN + "-" + stamp + ".md";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // --- event wiring ------------------------------------------------------
+  formEl.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    submitQuestion(inputEl.value);
+  });
+  inputEl.addEventListener("keydown", (ev) => {
+    if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") {
+      ev.preventDefault();
+      submitQuestion(inputEl.value);
+    }
+  });
+  clearEl.addEventListener("click", () => {
+    if (!loadTurns().length) return;
+    if (!confirm("Clear the entire chat history for " + DOMAIN + "? This cannot be undone.")) return;
+    localStorage.removeItem(STORAGE_KEY);
+    renderAll();
+  });
+  exportEl.addEventListener("click", exportMarkdown);
+
+  // --- initial render + optional auto-submit ----------------------------
+  renderAll();
+  {% if prefill_include_candidates %}includeEl.checked = true;{% endif %}
+  {% if prefill_question %}
+  inputEl.value = {{ prefill_question | tojson }};
+  // Auto-submit when a ?q=... URL is shared.
+  submitQuestion(inputEl.value);
   {% endif %}
-{% else %}
-<div class="empty">
-  <p class="muted">
-    Type a question above and click <strong>Ask</strong>. Looking for a
-    keyword instead? Use <a href="/query/{{ domain }}">Query</a>.
-  </p>
-</div>
-{% endif %}
+})();
+</script>
 {% endblock %}
