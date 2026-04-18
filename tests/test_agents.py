@@ -165,7 +165,7 @@ def test_run_agent_records_ok(repo_root, monkeypatch):
 
     calls = {"n": 0}
 
-    def _fake_run(*, meta, repo_root, job_id, question_override=None):
+    def _fake_run(**kwargs):
         calls["n"] += 1
         return {"message": "did the work", "outputs": ["artefact.md"]}
 
@@ -239,3 +239,116 @@ def test_deep_search_needs_api_key(repo_root, monkeypatch):
     result = run_agent("deepSearch", repo_root)
     assert result.status == "failed"
     assert "ANTHROPIC_API_KEY" in (result.error or "")
+
+
+# ---------------------------------------------------------------------------
+# work_scope + seen ledger
+# ---------------------------------------------------------------------------
+
+from src.agents.seen import (
+    SeenTracker,
+    clear_seen,
+    load_seen,
+    normalize_scope,
+    save_seen,
+)
+
+
+def test_normalize_scope_defaults_to_all():
+    assert normalize_scope("all") == "all"
+    assert normalize_scope("new") == "new"
+    assert normalize_scope("") == "all"
+    assert normalize_scope("junk") == "all"
+    assert normalize_scope(None) == "all"
+
+
+def test_seen_load_save_roundtrip(repo_root):
+    (repo_root / "agents" / "foo").mkdir(parents=True)
+    save_seen("foo", repo_root, {"a", "b", "c"})
+    assert load_seen("foo", repo_root) == {"a", "b", "c"}
+
+
+def test_seen_missing_returns_empty_set(repo_root):
+    (repo_root / "agents" / "foo").mkdir(parents=True)
+    assert load_seen("foo", repo_root) == set()
+
+
+def test_seen_tracker_marks_only_additions():
+    t = SeenTracker(initial={"a", "b"})
+    t.mark("c")
+    t.mark_many(["d", "e"])
+    assert t.marked == {"c", "d", "e"}
+    assert t.final == {"a", "b", "c", "d", "e"}
+
+
+def test_seen_tracker_filter_new():
+    t = SeenTracker(initial={"x", "y"})
+    items = [{"id": "x"}, {"id": "z"}]
+    fresh = t.filter_new(items, key=lambda it: it["id"])
+    assert fresh == [{"id": "z"}]
+
+
+def test_clear_seen_removes_file(repo_root):
+    (repo_root / "agents" / "foo").mkdir(parents=True)
+    save_seen("foo", repo_root, {"x"})
+    clear_seen("foo", repo_root)
+    assert load_seen("foo", repo_root) == set()
+
+
+def test_runner_persists_seen_after_success(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "tracker-ok", schedule="manual",
+                    config_extra={"work_scope": "new"})
+
+    def _run(**kwargs):
+        seen = kwargs["seen"]
+        assert kwargs["work_scope"] == "new"
+        seen.mark("item-1", "item-2")
+        return {"message": "ok", "outputs": []}
+
+    monkeypatch.setitem(AGENT_RUN_FNS, "tracker-ok", _run)
+    result = run_agent("tracker-ok", repo_root)
+    assert result.status == "ok"
+    assert load_seen("tracker-ok", repo_root) == {"item-1", "item-2"}
+
+
+def test_runner_does_not_persist_seen_on_failure(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "tracker-fail", schedule="manual",
+                    config_extra={"work_scope": "new"})
+
+    def _run(**kwargs):
+        kwargs["seen"].mark("item-should-not-persist")
+        raise RuntimeError("mid-run crash")
+
+    monkeypatch.setitem(AGENT_RUN_FNS, "tracker-fail", _run)
+    result = run_agent("tracker-fail", repo_root)
+    assert result.status == "failed"
+    assert load_seen("tracker-fail", repo_root) == set()
+
+
+def test_runner_extends_existing_seen_set(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "tracker-extend", schedule="manual",
+                    config_extra={"work_scope": "new"})
+    save_seen("tracker-extend", repo_root, {"old-1"})
+
+    def _run(**kwargs):
+        assert "old-1" in kwargs["seen"].initial
+        kwargs["seen"].mark("new-1")
+        return {"message": "ok"}
+
+    monkeypatch.setitem(AGENT_RUN_FNS, "tracker-extend", _run)
+    run_agent("tracker-extend", repo_root)
+    assert load_seen("tracker-extend", repo_root) == {"old-1", "new-1"}
+
+
+def test_runner_defaults_work_scope_to_all(repo_root, monkeypatch):
+    _scaffold_agent(repo_root, "no-scope", schedule="manual")  # no work_scope in config
+
+    captured = {}
+
+    def _run(**kwargs):
+        captured["scope"] = kwargs["work_scope"]
+        return {"message": "ok"}
+
+    monkeypatch.setitem(AGENT_RUN_FNS, "no-scope", _run)
+    run_agent("no-scope", repo_root)
+    assert captured["scope"] == "all"

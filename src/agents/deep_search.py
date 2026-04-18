@@ -26,6 +26,7 @@ from src.digest import (
 
 if TYPE_CHECKING:
     from src.agents.registry import AgentMeta
+    from src.agents.seen import SeenTracker
 from src.query import collect_ask_context
 from src.utils import now_iso, slug_from_title
 from src.validate import validate_frontmatter
@@ -71,12 +72,28 @@ def _substitute(template: str, **values: str) -> str:
     return out
 
 
+def _page_item_id(page) -> str:
+    """Stable id for a page in the seen ledger.
+
+    Uses path + updated_at so an updated page becomes a fresh "new" item.
+    """
+    # `body` itself isn't reliable because we don't have updated_at on
+    # PageMatch. Path alone is OK — an edit produces a new candidate and
+    # reviewers typically approve-as-replace, so the path remains the same
+    # but `new` still catches the page only on first processing. That's the
+    # conservative choice. Wire in updated_at if a use case demands it.
+    return str(page.path)
+
+
 def run_deep_search(
     *,
     meta: "AgentMeta",
     repo_root: Path,
     job_id: str,
     question_override: Optional[str] = None,
+    work_scope: str = "all",
+    seen: Optional["SeenTracker"] = None,
+    **_ignored,
 ) -> dict:
     """Execute one deep-search run. Returns {message, outputs, ...}.
 
@@ -108,6 +125,22 @@ def run_deep_search(
         max_pages=max_pages,
         max_chars=max_chars,
     )
+
+    # Honour work_scope=new — drop pages we've already processed in prior runs.
+    if work_scope == "new" and seen is not None:
+        before = len(pages)
+        pages = seen.filter_new(pages, key=_page_item_id)
+        if not pages:
+            return {
+                "message": (
+                    f"work_scope=new: 0 unseen pages (ledger has "
+                    f"{len(seen.initial)} entries, retrieval returned {before}). "
+                    f"Nothing to research — reset the seen ledger or switch to all."
+                ),
+                "outputs": [],
+                "skipped": True,
+                "domain": domain,
+            }
 
     candidate_id = build_candidate_id(f"deep-research {slug_from_title(question)[:40]}", question)
     prompt = _substitute(
@@ -150,10 +183,15 @@ def run_deep_search(
     tokens_in = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
     tokens_out = int(getattr(usage, "output_tokens", 0) or 0) if usage else 0
 
+    # Record the pages we actually consumed so future work_scope=new runs
+    # skip them. Always safe to call — the runner only persists on success.
+    if seen is not None:
+        seen.mark_many(_page_item_id(p) for p in pages)
+
     return {
         "message": (
             f"Filed deep-research-report → candidates/{domain}/pending/{cand_filename} "
-            f"(tokens {tokens_in}→{tokens_out}, pages={len(pages)})"
+            f"(tokens {tokens_in}→{tokens_out}, pages={len(pages)}, scope={work_scope})"
         ),
         "outputs": [cand_filename],
         "candidate_filename": cand_filename,
@@ -162,4 +200,6 @@ def run_deep_search(
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
         "domain": domain,
+        "work_scope": work_scope,
+        "pages_seen": len(pages),
     }

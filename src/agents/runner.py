@@ -9,6 +9,7 @@ from typing import Any, Optional
 import yaml
 
 from src.agents.registry import AGENT_RUN_FNS, load_agent
+from src.agents.seen import SeenTracker, load_seen, normalize_scope, save_seen
 from src.agents.state import save_state, update_state
 from src.utils import append_line, atomic_write, hash8, now_iso
 
@@ -98,6 +99,11 @@ def run_agent(
         last_status="running", last_job_id=job_id,
     )
 
+    # work_scope + seen ledger — standard across agents. Agents that don't
+    # care about scope simply ignore the parameter.
+    work_scope = normalize_scope(meta.config.get("work_scope", "all"))
+    seen_tracker = SeenTracker(initial=load_seen(agent_name, repo_root))
+
     t0 = time.monotonic()
     try:
         result: dict = run_fn(
@@ -105,11 +111,19 @@ def run_agent(
             repo_root=repo_root,
             job_id=job_id,
             question_override=question_override,
+            work_scope=work_scope,
+            seen=seen_tracker,
         ) or {}
         duration = time.monotonic() - t0
         completed_iso = now_iso()
         outputs = list(result.get("outputs") or [])
         message = str(result.get("message") or "ok")
+        # Persist the ledger ONLY on success — on failure, items get retried.
+        if seen_tracker.marked:
+            try:
+                save_seen(agent_name, repo_root, seen_tracker.final)
+            except Exception:
+                pass
         _write_job_yaml(repo_root, "completed", {
             "job_id": job_id, "job_type": "agent-run",
             "domain": meta.config.get("domain"),

@@ -116,9 +116,10 @@ Start the web UI (`python -m uvicorn app:app --port 5000` or equivalent), open `
 
   agents/
     <agent_name>/
-      config.yaml            ← agent parameters + schedule (user-editable)
+      config.yaml            ← agent parameters + schedule + work_scope (user-editable)
       prompt.md              ← LLM prompt template (user-editable)
       state.yaml             ← last_run_at / last_status / last_job_id (runner-written)
+      seen.json              ← IDs of items this agent has already processed (runner-written)
 
   audit/
     approvals.log
@@ -139,6 +140,12 @@ The registry in `src/agents/registry.py` maps a folder name to a Python run func
 A background asyncio task started by `src/web/app.py` (`scheduler_loop` in `src/agents/scheduler.py`) ticks every `TWOBRAIN_SCHEDULER_TICK` seconds (default 60) and runs any agent whose `schedule` (`hourly` / `daily` / `weekly`) has elapsed since `last_run_at`. Set `TWOBRAIN_DISABLE_SCHEDULER=1` in tests or multi-worker deployments to avoid duplicate fires.
 
 Every agent run also produces a job YAML in `jobs/completed/` (or `jobs/failed/`) with `job_type: agent-run`, so the Jobs tab stays the canonical audit surface.
+
+**work_scope** is a uniform config field on every agent (`all` | `new`, default `all`):
+- `all` — the agent processes every relevant item each run.
+- `new` — the agent skips items whose IDs are already in `agents/<name>/seen.json`. The runner hands the agent a `SeenTracker` with the loaded set; the agent calls `seen.mark(...)` on items it consumed; the runner persists the ledger only on successful completion (so failed runs don't poison the set).
+
+Agents decide their own item-ID scheme — `deepSearch` uses the page path so a reprocessed page gets skipped until reset. The Agents tab shows the ledger size and offers a **Reset seen** button to force a full reprocess.
 
 First domain to build: `domains/edge-ai/` (embedded boards, NPUs, perception models, benchmarks, toolchains).
 
@@ -868,6 +875,7 @@ The FastAPI app lives in `src/web/`. Routes are grouped under `src/web/routes/`,
 | `/agents/<name>/schedule` | POST | Set schedule (`off` / `manual` / `hourly` / `daily` / `weekly`) — writes into `config.yaml` |
 | `/agents/<name>/config` | POST | Save the full config form — round-trips unknown keys |
 | `/agents/<name>/prompt` | POST | Save `prompt.md` |
+| `/agents/<name>/reset-seen` | POST | Clear `agents/<name>/seen.json` so the next `work_scope=new` run reprocesses everything |
 | `/jobs` | GET | All job records grouped by state. Per-row checkboxes + bulk delete + delete-all per state + delete-all-everywhere |
 | `/jobs/<state>/<file>` | GET | Job detail with the full event log (auto-refreshes every 3s while `status=running`; redirects to new location when the job transitions) |
 | `/jobs/<state>/<file>/delete` · `/jobs/bulk-delete` · `/jobs/<state>/delete-all` · `/jobs/delete-all` | POST | Single / multi / per-state / global job cleanup |

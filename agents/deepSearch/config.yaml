@@ -1,17 +1,29 @@
 name: deepSearch
-description: 'Deep research worker. Reads the approved wiki (optionally candidates),
-  calls the LLM with the prompt in prompt.md, and files a deep-research-report candidate
-  for human approval.
+description: >
+  Deep research worker. Reads the approved wiki (optionally candidates),
+  calls the LLM with the prompt in prompt.md, and files a
+  deep-research-report candidate for human approval.
 
-  '
 schedule: manual
+
+# Work scope: "all" processes every relevant item each run; "new" skips
+# items already recorded in agents/deepSearch/seen.json. Reset the ledger
+# from the Agents tab to force a full reprocess.
+work_scope: all
+
 domain: edge-ai
-question: 'Compare the current edge-AI inference platforms we know about — where are
+
+# Default research question used by scheduled runs and pre-filled on the
+# manual Run button in the UI.
+question: >
+  Compare the current edge-AI inference platforms we know about — where are
   the gaps in the wiki? What should we research next?
 
-  '
+# LLM settings
 model: claude-sonnet-4-6
 max_tokens: 4096
 max_pages: 16
 max_context_chars: 60000
+
+# Include pending candidates in the context the agent sees.
 include_candidates: true

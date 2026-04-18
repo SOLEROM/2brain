@@ -12,16 +12,30 @@ driven by on-disk config.
 """
 from src.agents.registry import AGENT_RUN_FNS, list_agents, load_agent
 from src.agents.runner import run_agent
-from src.agents.state import load_state, save_state
 from src.agents.schedule import agents_due, parse_interval_seconds
+from src.agents.seen import (
+    SeenTracker,
+    VALID_SCOPES,
+    clear_seen,
+    load_seen,
+    normalize_scope,
+    save_seen,
+)
+from src.agents.state import load_state, save_state
 
 __all__ = [
     "AGENT_RUN_FNS",
+    "SeenTracker",
+    "VALID_SCOPES",
+    "agents_due",
+    "clear_seen",
     "list_agents",
     "load_agent",
-    "run_agent",
+    "load_seen",
     "load_state",
-    "save_state",
-    "agents_due",
+    "normalize_scope",
     "parse_interval_seconds",
+    "run_agent",
+    "save_seen",
+    "save_state",
 ]

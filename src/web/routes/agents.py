@@ -19,6 +19,7 @@ from src.agents.registry import (
 )
 from src.agents.runner import run_agent
 from src.agents.schedule import VALID_INTERVALS, parse_interval_seconds
+from src.agents.seen import VALID_SCOPES, clear_seen, load_seen, normalize_scope
 from src.utils import atomic_write
 
 router = APIRouter()
@@ -32,10 +33,11 @@ router = APIRouter()
 async def agents_list(request: Request):
     repo_root: Path = request.app.state.repo_root
     templates = request.app.state.templates
-    agents = [_to_list_dict(m) for m in list_agents(repo_root)]
+    agents = [_to_list_dict(m, repo_root) for m in list_agents(repo_root)]
     return templates.TemplateResponse(request, "agents.html", {
         "agents": agents,
         "intervals": VALID_INTERVALS,
+        "scopes": VALID_SCOPES,
     })
 
 
@@ -51,6 +53,7 @@ async def agent_detail(request: Request, name: str):
     return templates.TemplateResponse(request, "agent_detail.html", {
         "agent": _to_detail_dict(meta, repo_root),
         "intervals": VALID_INTERVALS,
+        "scopes": VALID_SCOPES,
     })
 
 
@@ -123,6 +126,9 @@ async def agents_save_config(request: Request, name: str):
         if key in form:
             new_cfg[key] = str(form[key]).strip()
 
+    if "work_scope" in form:
+        new_cfg["work_scope"] = normalize_scope(form["work_scope"])
+
     for key in ["max_tokens", "max_pages", "max_context_chars"]:
         if key in form:
             raw = str(form[key]).strip()
@@ -170,6 +176,16 @@ async def agents_save_prompt(
     return RedirectResponse(f"/agents/{name}", status_code=303)
 
 
+@router.post("/agents/{name}/reset-seen")
+async def agents_reset_seen(request: Request, name: str):
+    repo_root: Path = request.app.state.repo_root
+    meta = load_agent(name, repo_root)
+    if meta is None:
+        return _not_found(request, name)
+    clear_seen(name, repo_root)
+    return RedirectResponse(f"/agents/{name}", status_code=303)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -209,16 +225,19 @@ def _relative_time(iso_str: Optional[str]) -> str:
     return f"{months}mo ago"
 
 
-def _to_list_dict(meta: AgentMeta) -> dict:
+def _to_list_dict(meta: AgentMeta, repo_root: Path) -> dict:
     state = meta.state or {}
     last_run_at = state.get("last_run_at")
     schedule = meta.schedule
     interval_s = parse_interval_seconds(schedule)
+    seen = load_seen(meta.name, repo_root)
     return {
         "name": meta.name,
         "description": meta.description,
         "schedule": schedule,
         "interval_seconds": interval_s,
+        "work_scope": normalize_scope(meta.config.get("work_scope", "all")),
+        "seen_count": len(seen),
         "last_run_at": last_run_at,
         "last_run_relative": _relative_time(last_run_at),
         "last_status": state.get("last_status"),
@@ -232,7 +251,7 @@ def _to_list_dict(meta: AgentMeta) -> dict:
 
 
 def _to_detail_dict(meta: AgentMeta, repo_root: Path) -> dict:
-    base = _to_list_dict(meta)
+    base = _to_list_dict(meta, repo_root)
     base.update({
         "config": meta.config,
         "config_path_rel": str(config_path(meta.name, repo_root).relative_to(repo_root)),

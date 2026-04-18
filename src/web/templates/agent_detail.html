@@ -50,6 +50,22 @@
         <button type="submit" class="btn-secondary">Save</button>
       </form>
     </div>
+    <div style="flex: 1; min-width: 220px;">
+      <div class="muted" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Work scope</div>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px;">
+        <code>{{ agent.work_scope }}</code>
+        <span class="muted" style="font-size: 12px;">{{ agent.seen_count }} item{{ '' if agent.seen_count == 1 else 's' }} seen</span>
+        {% if agent.seen_count > 0 %}
+        <form method="post" action="/agents/{{ agent.name }}/reset-seen" style="margin: 0;"
+              onsubmit="return confirm('Reset the seen ledger for {{ agent.name }}? The next work_scope=new run will reprocess everything.');">
+          <button type="submit" class="btn-secondary" style="font-size: 12px; padding: 4px 10px;">Reset seen</button>
+        </form>
+        {% endif %}
+      </div>
+      <div class="muted" style="font-size: 11px; margin-top: 4px;">
+        <code>all</code> = process everything each run · <code>new</code> = skip items already processed
+      </div>
+    </div>
     <div style="flex: 2; min-width: 260px;">
       <div class="muted" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Run now</div>
       <form method="post" action="/agents/{{ agent.name }}/run" style="margin: 4px 0 0; display: flex; gap: 8px; flex-wrap: wrap;">
@@ -120,6 +136,14 @@
         <select id="cfg-schedule" name="schedule">
           {% for i in intervals %}
           <option value="{{ i }}" {% if i == agent.schedule %}selected{% endif %}>{{ i }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="flex: 1; min-width: 160px;">
+        <label for="cfg-work-scope">Work scope</label>
+        <select id="cfg-work-scope" name="work_scope">
+          {% for s in scopes %}
+          <option value="{{ s }}" {% if s == agent.work_scope %}selected{% endif %}>{{ s }}</option>
           {% endfor %}
         </select>
       </div>
