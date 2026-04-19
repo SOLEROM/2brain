@@ -88,6 +88,18 @@ def find_near_duplicates(title: str, domain: str, repo_root: Path) -> list[str]:
 # Prompt construction
 # ---------------------------------------------------------------------------
 
+def load_raw_metadata(repo_root: Path, raw_id: str) -> dict:
+    """Return the raw source's metadata.yaml (or {} if absent/malformed)."""
+    p = repo_root / "inbox" / "raw" / raw_id / "metadata.yaml"
+    if not p.exists():
+        return {}
+    try:
+        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        return data if isinstance(data, dict) else {}
+    except yaml.YAMLError:
+        return {}
+
+
 def build_digest_prompt(
     raw_content: str,
     raw_id: str,
@@ -97,13 +109,43 @@ def build_digest_prompt(
     schema_path = repo_root / "domains" / domain / "schema.md"
     schema = schema_path.read_text(encoding="utf-8") if schema_path.exists() else "(no schema found)"
 
+    # The user's original URL is authoritative — never let the LLM shorten
+    # or normalise it. We hand it to the prompt verbatim AND enforce it in
+    # post-processing below.
+    meta = load_raw_metadata(repo_root, raw_id)
+    raw_url = str(meta.get("url") or "").strip()
+    raw_title = str(meta.get("title") or "").strip()
+    raw_type = str(meta.get("source_type") or "").strip()
+
+    source_block_rule = (
+        "Include this raw source in your `sources:` frontmatter using the EXACT "
+        "url below — do NOT shorten, clean, normalise, strip query parameters, "
+        "decode, re-encode, or otherwise modify it. If you emit a url field, it "
+        "must be character-for-character identical to the one shown."
+    )
+    if raw_url:
+        authoritative_block = (
+            "## Raw Source Metadata (authoritative — DO NOT MODIFY)\n"
+            f"- raw_id: {raw_id}\n"
+            f"- url: {raw_url}\n"
+            f"- title: {raw_title or '(unknown)'}\n"
+            f"- source_type: {raw_type or '(unknown)'}\n\n"
+            + source_block_rule
+        )
+    else:
+        authoritative_block = (
+            "## Raw Source Metadata\n"
+            f"- raw_id: {raw_id}\n"
+            "- url: (none — not a URL-sourced ingest)\n\n"
+            "Include the raw_id in your `sources:` and `raw_ids:` frontmatter."
+        )
+
     return f"""You are a knowledge wiki digest agent. Your task is to read a raw source and produce one Markdown candidate page.
 
 ## Domain Schema
 {schema}
 
-## Raw Source ID
-{raw_id}
+{authoritative_block}
 
 ## Raw Source Content
 {raw_content}
@@ -119,10 +161,109 @@ def build_digest_prompt(
 8. Use confidence score between 0.0 and 1.0 following the rubric.
 9. Do NOT include broken wikilinks. List missing pages in ## Suggested New Pages instead.
 10. Output ONLY the Markdown page. No explanation or preamble.
+11. Preserve the user's original source URL verbatim in `sources:` — see the authoritative block above.
 
 Current timestamp: {now_iso()}
 Domain: {domain}
 """
+
+
+def enforce_raw_source_url(fm: dict, raw_id: str, raw_url: str, raw_title: str) -> bool:
+    """Rewrite `fm.sources` so the entry for ``raw_id`` carries the exact URL.
+
+    Returns True if the frontmatter was changed. Covers three cases:
+
+    - The LLM emitted a source entry under our raw_id but with a shortened
+      or rewritten URL → we restore the verbatim URL.
+    - The LLM included the URL under a different (or missing) raw_id → we
+      stamp our raw_id on it and restore the verbatim URL.
+    - The LLM dropped the source entry entirely → we prepend one.
+
+    No-op when ``raw_url`` is empty (non-URL ingest).
+    """
+    if not raw_url:
+        return False
+    sources = fm.get("sources")
+    if not isinstance(sources, list):
+        sources = []
+    changed = False
+    found = False
+    new_sources: list = []
+
+    for s in sources:
+        if isinstance(s, dict):
+            s = dict(s)  # don't mutate in place
+            s_raw = str(s.get("raw_id") or "").strip()
+            s_url = str(s.get("url") or "").strip()
+            if s_raw == raw_id:
+                if s_url != raw_url:
+                    s["url"] = raw_url
+                    changed = True
+                found = True
+            elif (not s_raw) and s_url and _looks_same_source(s_url, raw_url) and s_url != raw_url:
+                # URL was shortened for this raw — re-stamp and restore.
+                s["url"] = raw_url
+                s["raw_id"] = raw_id
+                changed = True
+                found = True
+            new_sources.append(s)
+        else:
+            # Bare-string source — leave other entries alone; a raw URL that
+            # happens to equal our raw_url still counts as "present".
+            if isinstance(s, str) and s.strip() == raw_url:
+                found = True
+            new_sources.append(s)
+
+    if not found:
+        entry: dict = {"raw_id": raw_id, "url": raw_url}
+        if raw_title:
+            entry["title"] = raw_title
+        new_sources.insert(0, entry)
+        changed = True
+
+    if changed:
+        fm["sources"] = new_sources
+
+    # raw_ids must also include our id so downstream (orphan detection,
+    # candidate-awaiting-review filtering, etc.) sees the provenance.
+    raw_ids = fm.get("raw_ids")
+    if not isinstance(raw_ids, list):
+        raw_ids = []
+    if raw_id not in [str(r) for r in raw_ids]:
+        fm["raw_ids"] = list(raw_ids) + [raw_id]
+        changed = True
+
+    return changed
+
+
+def _looks_same_source(a: str, b: str) -> bool:
+    """Cheap heuristic: same scheme+host, and one path is a prefix of the other.
+
+    Catches the common "LLM stripped query params" case without false
+    positives across different sites.
+    """
+    try:
+        from urllib.parse import urlsplit
+        pa, pb = urlsplit(a), urlsplit(b)
+    except Exception:
+        return False
+    if not pa.netloc or pa.netloc != pb.netloc:
+        return False
+    if pa.scheme and pb.scheme and pa.scheme != pb.scheme:
+        return False
+    path_a = pa.path.rstrip("/")
+    path_b = pb.path.rstrip("/")
+    return path_a.startswith(path_b) or path_b.startswith(path_a)
+
+
+def reserialize_page(fm: dict, body: str) -> str:
+    """Re-emit a markdown candidate with updated frontmatter."""
+    return (
+        "---\n"
+        + yaml.dump(fm, allow_unicode=True, sort_keys=False, default_flow_style=False)
+        + "---\n\n"
+        + body
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -325,13 +466,23 @@ def digest_raw(
         return _finalize_failed(err)
     _emit(on_event, "info", "validate-ok", "Frontmatter validated")
 
-    fm, _ = parse_frontmatter_str(page_text)
+    fm, body = parse_frontmatter_str(page_text)
     target_path = fm.get("target_path", "")
     if target_path and not check_path_traversal(target_path, domain):
         err = f"Invalid target_path: {target_path!r}"
         _emit(on_event, "error", "target-path", err)
         return _finalize_failed(err)
     _emit(on_event, "info", "target-path", f"Target: {target_path}")
+
+    # Authoritative URL preservation. The user's source URL is the canonical
+    # pointer back to the input — we refuse to let the LLM shorten it.
+    meta = load_raw_metadata(repo_root, raw_id)
+    raw_url = str(meta.get("url") or "").strip()
+    raw_title = str(meta.get("title") or "").strip()
+    if enforce_raw_source_url(fm, raw_id, raw_url, raw_title):
+        page_text = reserialize_page(fm, body)
+        _emit(on_event, "info", "source-url",
+              f"Preserved user source URL verbatim → {raw_url or '(no url)'}")
 
     # Non-fatal: report near-duplicates so the reviewer knows what might be impacted.
     title = fm.get("title", "")

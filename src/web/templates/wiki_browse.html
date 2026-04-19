@@ -11,8 +11,11 @@
   </div>
   {% if pages %}
   <div class="view-toolbar" role="tablist" aria-label="Display mode">
-    <button type="button" class="view-btn" data-view-option="graph" aria-label="Wiki graph view">
-      <span class="vb-icon" aria-hidden="true">◎</span><span class="vb-label">Wiki</span>
+    <button type="button" class="view-btn" data-view-option="wiki" aria-label="Wiki root view">
+      <span class="vb-icon" aria-hidden="true">📖</span><span class="vb-label">Wiki</span>
+    </button>
+    <button type="button" class="view-btn" data-view-option="graph" aria-label="Graph view">
+      <span class="vb-icon" aria-hidden="true">◎</span><span class="vb-label">Graph</span>
     </button>
     <button type="button" class="view-btn" data-view-option="list" aria-label="List view">
       <span class="vb-icon" aria-hidden="true">☰</span><span class="vb-label">List</span>
@@ -109,6 +112,59 @@
   <p class="muted">Adjust or reset the filters to see results.</p>
 </div>
 
+<section id="wiki-root-section" class="card" style="display: none; padding: 20px 24px;">
+  <div class="row" style="justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; align-items: center;">
+    <div class="muted" style="font-size: 13px;">
+      {% if wiki_root_exists %}
+        Wiki root · <code>domains/{{ domain }}/index.md</code>
+        {% if wiki_root_generated_at %} · generated {{ wiki_root_generated_at[:10] }}{% endif %}
+      {% else %}
+        No wiki root generated yet.
+      {% endif %}
+    </div>
+    <div class="row" style="gap: 6px; flex-wrap: wrap;">
+      <a href="/agents/wikiLLM" class="btn-secondary">{% if wiki_root_exists %}Rebuild ↻{% else %}Generate with wikiLLM{% endif %}</a>
+    </div>
+  </div>
+
+  {% if wiki_root_exists %}
+  <div class="wiki-root-body">
+    {{ wiki_root_html | safe }}
+  </div>
+  {% else %}
+  <div class="empty" style="padding: 24px 12px;">
+    <h3 style="margin: 0 0 6px;">No wiki root yet</h3>
+    <p class="muted" style="margin: 0 0 14px;">
+      Run the <code>wikiLLM</code> agent to build a curated, cross-linked landing
+      page from every approved item in this domain.
+    </p>
+    <a href="/agents/wikiLLM" class="btn">Open wikiLLM</a>
+  </div>
+  {% endif %}
+
+  <section class="wiki-orphans" style="margin-top: 28px; border-top: 1px solid var(--c-border, #e5e5e5); padding-top: 18px;">
+    <h2 style="margin: 0 0 4px;">Orphans</h2>
+    <p class="muted" style="margin: 0 0 12px; font-size: 13px;">
+      Approved pages with no inbound <code>[[wikilink]]</code>. They exist
+      in the tree but nothing else points at them — worth wiring into the
+      wiki root or linking from a related page.
+    </p>
+    {% if orphans %}
+    <ul class="orphans-list" style="margin: 0; padding-left: 18px;">
+      {% for p in orphans %}
+      <li style="margin: 4px 0;">
+        <a href="/wiki/{{ domain }}/page/{{ p.rel_path }}">{{ p.title }}</a>
+        {% if p.type %}<span class="badge" style="margin-left: 6px;">{{ p.type }}</span>{% endif %}
+        <span class="subtle" style="margin-left: 6px; font-size: 12px;">{{ "%.2f"|format(p.confidence) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted" style="margin: 0;">None — every page is reachable from another.</p>
+    {% endif %}
+  </section>
+</section>
+
 <section id="wiki-graph-section" class="card" style="display: none; padding: 16px;">
   {% if connections_exists %}
   <div id="wiki-graph-toolbar" class="row" style="justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; align-items: center;">
@@ -126,21 +182,27 @@
       <button type="button" class="btn-secondary graph-filter active" data-gfilter="related">related</button>
       <button type="button" class="btn-secondary graph-filter active" data-gfilter="shared-source">shared source</button>
       <button type="button" class="btn-secondary" id="wiki-graph-fit">Fit</button>
-      <a href="/agents/wikiOrder" class="btn-secondary">Rebuild ↻</a>
+      <a href="/agents/wikiGraph" class="btn-secondary">Rebuild ↻</a>
     </div>
   </div>
   <div id="wiki-graph-canvas" style="width: 100%; height: 70vh; min-height: 480px; border: 1px solid var(--c-border, #ddd); border-radius: 6px; background: var(--c-surface, #fafafa); position: relative;">
-    <div id="wiki-graph-loading" class="muted" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 13px;">Loading graph…</div>
+    <div id="wiki-graph-loading" class="muted" style="position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: center; font-size: 13px; text-align: center; padding: 20px;">
+      <span id="wiki-graph-loading-text">Loading graph…</span>
+      <div class="row" style="gap: 8px;">
+        <button type="button" id="wiki-graph-retry" class="btn-secondary" style="display: none;">Retry</button>
+        <button type="button" id="wiki-graph-escape" class="btn-secondary">Back to list view</button>
+      </div>
+    </div>
   </div>
   <script type="application/json" id="wiki-graph-data">{{ connections | tojson }}</script>
   {% else %}
   <div class="empty" style="padding: 32px 16px;">
     <h3 style="margin: 0 0 6px;">No connection map yet</h3>
     <p class="muted" style="margin: 0 0 14px;">
-      Run the <code>wikiOrder</code> agent to scan every approved page and build the graph of
+      Run the <code>wikiGraph</code> agent to scan every approved page and build the graph of
       wikilinks, related_pages, and shared sources.
     </p>
-    <a href="/agents/wikiOrder" class="btn">Open wikiOrder</a>
+    <a href="/agents/wikiGraph" class="btn">Open wikiGraph</a>
   </div>
   {% endif %}
 </section>
@@ -149,36 +211,52 @@
 (function() {
   const root = document.getElementById('wiki-root');
   const graphSection = document.getElementById('wiki-graph-section');
+  const wikiRootSection = document.getElementById('wiki-root-section');
   const filtersCard = document.querySelector('.wiki-filters');
   const filterEmpty = document.getElementById('filter-empty');
   const KEY = '2brain-wiki-view';
-  const VALID = ['graph', 'list', 'cards', 'compact'];
+  const VALID = ['wiki', 'graph', 'list', 'cards', 'compact'];
 
   function setView(mode) {
     if (!VALID.includes(mode)) mode = 'list';
     const isGraph = mode === 'graph';
+    const isWiki = mode === 'wiki';
+    const isListLike = !isGraph && !isWiki;
     if (root) root.setAttribute('data-wiki-view', mode);
-    if (root) root.style.display = isGraph ? 'none' : '';
-    if (filtersCard) filtersCard.style.display = isGraph ? 'none' : '';
-    if (filterEmpty) filterEmpty.style.display = isGraph ? 'none' : filterEmpty.style.display;
+    if (root) root.style.display = isListLike ? '' : 'none';
+    if (filtersCard) filtersCard.style.display = isListLike ? '' : 'none';
+    if (filterEmpty) filterEmpty.style.display = isListLike ? filterEmpty.style.display : 'none';
     if (graphSection) graphSection.style.display = isGraph ? '' : 'none';
+    if (wikiRootSection) wikiRootSection.style.display = isWiki ? '' : 'none';
     document.querySelectorAll('[data-view-option]').forEach(function(b) {
       b.classList.toggle('active', b.dataset.viewOption === mode);
     });
     try { localStorage.setItem(KEY, mode); } catch (e) {}
-    if (isGraph) ensureGraph();
+    // Defer the expensive graph init so we return control to the browser
+    // first — the view toggle must always remain responsive, even if cose
+    // or cytoscape decide to take a few seconds.
+    if (isGraph) setTimeout(ensureGraph, 0);
   }
 
-  let initial = 'list';
-  try {
-    const stored = localStorage.getItem(KEY);
-    if (stored) initial = stored;
-  } catch (e) {}
-  setView(initial);
-
+  // Attach view-toggle listeners FIRST, unconditionally — this must work
+  // even if graph init later throws, so users can always escape graph mode.
   document.querySelectorAll('[data-view-option]').forEach(function(btn) {
     btn.addEventListener('click', function() { setView(btn.dataset.viewOption); });
   });
+
+  // URL override (?view=list) wins over localStorage — a permanent escape
+  // hatch when a stuck 'graph' preference keeps locking the user out.
+  let initial = 'list';
+  try {
+    const qp = new URLSearchParams(window.location.search).get('view');
+    if (qp && VALID.includes(qp)) {
+      initial = qp;
+    } else {
+      const stored = localStorage.getItem(KEY);
+      if (stored && VALID.includes(stored)) initial = stored;
+    }
+  } catch (e) {}
+  setView(initial);
 
   // Compact view: clicking a row toggles its expanded details (everything but
   // the title link itself).
@@ -271,11 +349,36 @@
 
   // -----------------------------------------------------------------
   // Graph view — lazy-load Cytoscape on first switch; render once.
+  // Try the vendored copy first (fast, offline-safe); fall back to the
+  // CDN only if the local file is missing.
   // -----------------------------------------------------------------
-  const CYTO_SRC = 'https://cdn.jsdelivr.net/npm/cytoscape@3.28.1/dist/cytoscape.min.js';
+  const CYTO_LOCAL = '/static/vendor/cytoscape.min.js';
+  const CYTO_CDN   = 'https://cdn.jsdelivr.net/npm/cytoscape@3.28.1/dist/cytoscape.min.js';
   let cyInstance = null;
   let cyLoading = null;
   const edgeFilter = new Set(['wikilink', 'related', 'shared-source']);
+
+  function showLoadError(msg) {
+    const txt = document.getElementById('wiki-graph-loading-text');
+    const btn = document.getElementById('wiki-graph-retry');
+    if (txt) txt.textContent = msg;
+    if (btn) btn.style.display = '';
+  }
+
+  function loadScript(src, timeoutMs) {
+    return new Promise(function(resolve, reject) {
+      const s = document.createElement('script');
+      s.src = src;
+      s.async = true;
+      const timer = setTimeout(function() {
+        s.onload = s.onerror = null;
+        reject(new Error('timeout:' + src));
+      }, timeoutMs || 10000);
+      s.onload = function() { clearTimeout(timer); resolve(); };
+      s.onerror = function() { clearTimeout(timer); reject(new Error('error:' + src)); };
+      document.head.appendChild(s);
+    });
+  }
 
   function ensureGraph() {
     const canvas = document.getElementById('wiki-graph-canvas');
@@ -284,18 +387,37 @@
     if (cyInstance) return;
     if (cyLoading) return;
     if (window.cytoscape) { initGraph(); return; }
-    cyLoading = new Promise(function(resolve, reject) {
-      const s = document.createElement('script');
-      s.src = CYTO_SRC;
-      s.async = true;
-      s.onload = function() { resolve(); };
-      s.onerror = function() { reject(new Error('cdn')); };
-      document.head.appendChild(s);
-    }).then(initGraph).catch(function() {
-      const loadingEl = document.getElementById('wiki-graph-loading');
-      if (loadingEl) loadingEl.textContent =
-        'Failed to load graph library from CDN. Check network or switch to List view.';
+    cyLoading = loadScript(CYTO_LOCAL, 8000)
+      .catch(function() { return loadScript(CYTO_CDN, 10000); })
+      .then(function() {
+        if (!window.cytoscape) throw new Error('no-global');
+        try {
+          initGraph();
+        } catch (err) {
+          console.error('[wiki-graph] init failed', err);
+          showLoadError('Graph render failed: ' + (err && err.message ? err.message : err));
+        }
+      })
+      .catch(function(err) {
+        cyLoading = null;
+        console.error('[wiki-graph] load failed', err);
+        showLoadError('Failed to load graph library. Click "Back to list view" to continue.');
+      });
+  }
+
+  const retryBtn = document.getElementById('wiki-graph-retry');
+  if (retryBtn) {
+    retryBtn.addEventListener('click', function() {
+      retryBtn.style.display = 'none';
+      const txt = document.getElementById('wiki-graph-loading-text');
+      if (txt) txt.textContent = 'Loading graph…';
+      ensureGraph();
     });
+  }
+
+  const escBtn = document.getElementById('wiki-graph-escape');
+  if (escBtn) {
+    escBtn.addEventListener('click', function() { setView('list'); });
   }
 
   function readColors() {
@@ -349,14 +471,28 @@
     const loadingEl = document.getElementById('wiki-graph-loading');
     if (loadingEl) loadingEl.remove();
 
+    // Scale-aware perf: hide labels & shrink layout work on large graphs
+    // so the cose O(n²) pass doesn't wedge the tab for a few seconds.
+    const N = nodes.length;
+    const big = N > 150;
+    const huge = N > 400;
+    const labelSel = huge ? 'node:selected' : (big ? 'node:selected, node:active' : 'node');
+
     cyInstance = cytoscape({
       container: document.getElementById('wiki-graph-canvas'),
       elements: { nodes: nodes, edges: edges },
       wheelSensitivity: 0.2,
+      // Viewport hygiene — these flip pan/zoom from "sluggish" to "smooth"
+      // once you get past a few hundred nodes.
+      hideEdgesOnViewport: big,
+      textureOnViewport: big,
+      motionBlur: false,
+      pixelRatio: 1,
+      minZoom: 0.1,
+      maxZoom: 3,
       style: [
         { selector: 'node', style: {
           'background-color': 'data(color)',
-          'label': 'data(label)',
           'color': C.text,
           'font-size': '11px',
           'text-valign': 'bottom',
@@ -369,8 +505,9 @@
           'border-width': 1,
           'border-color': C.muted,
         }},
+        { selector: labelSel, style: { 'label': 'data(label)' }},
         { selector: 'node:selected', style: {
-          'border-width': 3, 'border-color': C.read,
+          'border-width': 3, 'border-color': C.read, 'label': 'data(label)',
         }},
         { selector: 'edge', style: {
           'curve-style': 'bezier',
@@ -391,12 +528,20 @@
         }},
         { selector: '.dim', style: { 'opacity': 0.1 }},
       ],
-      layout: {
+      layout: huge ? {
+        name: 'concentric',
+        animate: false,
+        concentric: function(n) { return n.data('confidence') || 0; },
+        levelWidth: function() { return 1; },
+        padding: 20,
+      } : {
         name: 'cose',
         animate: false,
         nodeRepulsion: 9000,
         idealEdgeLength: 90,
         padding: 20,
+        numIter: big ? 400 : 1000,
+        coolingFactor: big ? 0.98 : 0.99,
       },
     });
 
@@ -404,6 +549,14 @@
       const id = evt.target.data('id');
       if (id) window.location.href = '/wiki/{{ domain }}/page/' + id;
     });
+
+    // Hover-to-reveal label in big-graph mode so users can still read
+    // nodes without paying the cost of rendering every label.
+    if (big && !huge) {
+      cyInstance.on('mouseover', 'node', function(e) { e.target.addClass('hover'); });
+      cyInstance.on('mouseout', 'node', function(e) { e.target.removeClass('hover'); });
+      cyInstance.style().selector('.hover').style({ 'label': 'data(label)' }).update();
+    }
 
     applyEdgeFilter();
   }

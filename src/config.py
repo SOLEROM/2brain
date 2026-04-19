@@ -51,6 +51,20 @@ DEFAULT_APP_CONFIG: dict = {
         "default_theme": "light",
         "themes": ["light", "dark", "hackers-green"],
     },
+
+    # LLM model catalog. Agents pick from `available`; per-agent config.yaml
+    # overrides this selection. `main` is the default for heavy work
+    # (digest, deep-research, wiki rewrite); `secondary` is the cheaper
+    # default for lightweight or high-frequency calls.
+    "models": {
+        "available": [
+            "claude-opus-4-7",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-5",
+        ],
+        "main": "claude-sonnet-4-6",
+        "secondary": "claude-haiku-4-5",
+    },
 }
 
 

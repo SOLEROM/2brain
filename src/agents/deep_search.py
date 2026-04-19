@@ -104,7 +104,8 @@ def run_deep_search(
         raise ValueError("No research question configured. Set `question` in config.yaml or pass an override.")
 
     domain = _resolve_domain(meta, repo_root)
-    model = str(meta.config.get("model") or "claude-sonnet-4-6")
+    from src.web.routes.shared import get_models_settings
+    model = str(meta.config.get("model") or get_models_settings(repo_root)["main"])
     max_tokens = int(meta.config.get("max_tokens", 4096))
     max_pages = int(meta.config.get("max_pages", 16))
     max_chars = int(meta.config.get("max_context_chars", 60_000))

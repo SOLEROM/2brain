@@ -36,6 +36,7 @@
 
     <h3>Actions</h3>
     <div class="sidebar-actions">
+      <a href="/wiki/{{ domain }}/page/{{ rel_path }}/edit" class="btn btn-secondary" style="display:inline-block; text-decoration:none;">✎ Edit page</a>
       {% set _other_domains = (request.state.all_domains or []) | reject('equalto', domain) | list %}
       {% if _other_domains %}
       <form method="post" action="/wiki/{{ domain }}/move"
@@ -66,9 +67,14 @@
         {% if src is mapping %}
           <li>
             {% if src.url %}<a href="{{ src.url }}" rel="noopener" target="_blank">{{ src.title or src.url }}</a>
-            {% else %}{{ src.title or src.raw_id }}{% endif %}
-            {% if src.raw_id %}<div class="subtle"><a href="/sources/{{ src.raw_id }}"><code>{{ src.raw_id }}</code></a></div>{% endif %}
+            {% elif src.raw_id %}<a href="/sources/{{ src.raw_id }}">{{ src.title or src.raw_id }}</a>
+            {% else %}{{ src.title or '(source)' }}{% endif %}
+            {% if src.raw_id and src.url %}<div class="subtle"><a href="/sources/{{ src.raw_id }}"><code>{{ src.raw_id }}</code></a></div>{% endif %}
           </li>
+        {% elif src is string and (src.startswith('http://') or src.startswith('https://')) %}
+          <li><a href="{{ src }}" rel="noopener" target="_blank" style="word-break: break-all;">{{ src }}</a></li>
+        {% elif src is string and src.startswith('raw_') %}
+          <li><a href="/sources/{{ src }}"><code>{{ src }}</code></a></li>
         {% else %}
           <li><code>{{ src }}</code></li>
         {% endif %}

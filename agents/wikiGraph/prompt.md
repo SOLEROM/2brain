@@ -1,6 +1,6 @@
-# wikiOrder prompt
+# wikiGraph prompt
 
-The MVP wikiOrder agent is deterministic and does not call an LLM, so this
+The MVP wikiGraph agent is deterministic and does not call an LLM, so this
 file is not consumed. It is kept for parity with other agents and reserved
 for a future `llm_enrichment` mode that would ask an LLM to propose semantic
 connections missing from the explicit wikilink / related_pages graph.

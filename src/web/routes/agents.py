@@ -21,6 +21,7 @@ from src.agents.runner import run_agent
 from src.agents.schedule import VALID_INTERVALS, parse_interval_seconds
 from src.agents.seen import VALID_SCOPES, clear_seen, load_seen, normalize_scope
 from src.utils import atomic_write
+from src.web.routes.shared import get_models_settings
 
 router = APIRouter()
 
@@ -50,10 +51,14 @@ async def agent_detail(request: Request, name: str):
     if meta is None:
         return _not_found(request, name)
 
+    models = get_models_settings(repo_root)
     return templates.TemplateResponse(request, "agent_detail.html", {
         "agent": _to_detail_dict(meta, repo_root),
         "intervals": VALID_INTERVALS,
         "scopes": VALID_SCOPES,
+        "available_models": models["available"],
+        "main_model": models["main"],
+        "secondary_model": models["secondary"],
     })
 
 

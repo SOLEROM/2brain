@@ -15,6 +15,81 @@
 {% endif %}
 
 <div class="card">
+  <h3 style="margin-top: 0;">Domains</h3>
+  <p class="muted" style="margin-top: 0; font-size: 13px;">
+    Each domain is an independent knowledge tree under <code>domains/&lt;name&gt;/</code>.
+    Rename cascades across the candidate tree, per-page frontmatter, agent configs,
+    and the default-domain setting. Deletion is intentionally unavailable — use git.
+  </p>
+
+  {% if domains %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Current name</th><th>Rename to</th><th></th><th style="text-align: right;">Danger</th></tr>
+      </thead>
+      <tbody>
+        {% for d in domains %}
+        <tr>
+          <td><code>{{ d }}</code>{% if d == cfg.default_domain %} <span class="badge">default</span>{% endif %}</td>
+          <td>
+            <form method="post" action="/config/domain/rename"
+                  id="rename-form-{{ loop.index }}"
+                  onsubmit="return confirm('Rename domain {{ d }}? This updates folder names, frontmatter on every page, the candidates tree, and agent configs. Not undoable via the UI (but git tracks it).');"
+                  style="display: flex; gap: 6px; margin: 0;">
+              <input type="hidden" name="old_domain" value="{{ d }}">
+              <input type="text" name="new_domain" placeholder="new-name"
+                     pattern="[a-z0-9][a-z0-9-]{0,39}"
+                     title="lowercase letters, numbers, hyphens (max 40)"
+                     required style="flex: 1; min-width: 140px;">
+            </form>
+          </td>
+          <td style="white-space: nowrap;">
+            <button type="submit" form="rename-form-{{ loop.index }}" class="btn-secondary">Rename</button>
+          </td>
+          <td style="text-align: right;">
+            <details class="domain-delete">
+              <summary class="btn-danger" style="display: inline-block; cursor: pointer; font-size: 12px; padding: 4px 10px;">Delete…</summary>
+              <form method="post" action="/config/domain/delete"
+                    onsubmit="return confirm('PERMANENTLY delete domain \'{{ d }}\'? This removes domains/{{ d }}/ and candidates/{{ d }}/ from disk. Git history preserves the files — nothing else.');"
+                    style="margin-top: 8px; padding: 10px; border: 1px solid var(--c-danger, #c33); border-radius: 6px; display: flex; flex-direction: column; gap: 6px; text-align: left; min-width: 240px;">
+                <span class="muted" style="font-size: 11px;">
+                  Type <code>{{ d }}</code> in <em>both</em> boxes to enable delete.
+                </span>
+                <input type="hidden" name="domain" value="{{ d }}">
+                <input type="text" name="confirm_1" placeholder="{{ d }}"
+                       autocomplete="off" required
+                       style="font-size: 12px; padding: 4px 6px;">
+                <input type="text" name="confirm_2" placeholder="{{ d }} (again)"
+                       autocomplete="off" required
+                       style="font-size: 12px; padding: 4px 6px;">
+                <button type="submit" class="btn-danger" style="font-size: 12px;">
+                  🗑 Permanently delete {{ d }}
+                </button>
+              </form>
+            </details>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <form method="post" action="/config/domain/create"
+        style="margin-top: 14px; display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap;">
+    <div class="form-group" style="flex: 1; min-width: 200px; margin: 0;">
+      <label for="new_domain">New domain name</label>
+      <input type="text" id="new_domain" name="new_domain" placeholder="e.g. robotics"
+             pattern="[a-z0-9][a-z0-9-]{0,39}"
+             title="lowercase letters, numbers, hyphens (max 40)" required>
+      <span class="form-hint">Scaffolds folders, <code>domain.yaml</code>, and placeholder index/log/schema files.</span>
+    </div>
+    <button type="submit" class="btn">+ Create domain</button>
+  </form>
+</div>
+
+<div class="card">
   <form method="post" action="/config">
 
     <h3 style="margin-top: 0;">Domain</h3>
@@ -70,6 +145,44 @@
       <div class="form-group">
         <label for="ui_themes">Available themes <span class="muted">(one per line)</span></label>
         <textarea name="ui_themes" id="ui_themes" rows="3">{{ (cfg.ui.themes if cfg.ui and cfg.ui.themes else ['light', 'dark', 'hackers-green']) | join('\n') }}</textarea>
+      </div>
+    </div>
+
+    <h3 style="margin-top: 24px;">Models</h3>
+    <p class="muted" style="margin: 0 0 10px; font-size: 13px;">
+      Catalog of LLMs available to agents. Each agent's per-folder
+      <code>config.yaml</code> picks a specific <code>model</code> from this
+      list; missing/empty agent values fall back to <em>main</em>.
+    </p>
+    <div class="form-row">
+      <div class="form-group" style="flex: 2; min-width: 240px;">
+        <label for="models_available">Available models <span class="muted">(one per line)</span></label>
+        <textarea name="models_available" id="models_available" rows="4">{{ available_models | join('\n') }}</textarea>
+        <span class="form-hint">Exact Anthropic model IDs. Custom entries you type into Main/Secondary are merged in automatically.</span>
+      </div>
+      <div class="form-group" style="flex: 1; min-width: 180px;">
+        <label for="models_main">Main model</label>
+        <select name="models_main" id="models_main">
+          {% for m in available_models %}
+          <option value="{{ m }}" {% if m == main_model %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+          {% if main_model and main_model not in available_models %}
+          <option value="{{ main_model }}" selected>{{ main_model }} (custom)</option>
+          {% endif %}
+        </select>
+        <span class="form-hint">Default for heavy work (digest, deep-research, wikiLLM).</span>
+      </div>
+      <div class="form-group" style="flex: 1; min-width: 180px;">
+        <label for="models_secondary">Secondary model</label>
+        <select name="models_secondary" id="models_secondary">
+          {% for m in available_models %}
+          <option value="{{ m }}" {% if m == secondary_model %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+          {% if secondary_model and secondary_model not in available_models %}
+          <option value="{{ secondary_model }}" selected>{{ secondary_model }} (custom)</option>
+          {% endif %}
+        </select>
+        <span class="form-hint">Cheaper default for lightweight / high-frequency calls.</span>
       </div>
     </div>
 

@@ -1182,3 +1182,25 @@ details[open] summary { margin-bottom: 8px; }
   color: var(--c-warning);
 }
 [data-theme="dark"] .page-body blockquote { color: var(--c-warning); }
+
+/* ---- wikiLLM "wiki" view: readable long-form index.md ---- */
+.wiki-root-body {
+  max-width: 820px;
+  margin: 0 auto;
+  line-height: 1.55;
+}
+.wiki-root-body h1 { margin-top: 0; }
+.wiki-root-body h2 { margin-top: 1.6em; border-bottom: 1px solid var(--c-border, #e5e5e5); padding-bottom: 4px; }
+.wiki-root-body h3 { margin-top: 1.2em; }
+.wiki-root-body ul { padding-left: 22px; }
+.wiki-root-body li { margin: 4px 0; }
+.wiki-root-body blockquote {
+  border-left: 3px solid var(--c-border, #ddd);
+  color: var(--c-muted, #666);
+  margin: 0 0 1em; padding: 0 12px;
+}
+.wikilink-broken {
+  color: var(--c-muted, #999);
+  border-bottom: 1px dotted var(--c-muted, #999);
+  cursor: help;
+}

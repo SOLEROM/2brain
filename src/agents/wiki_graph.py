@@ -1,4 +1,4 @@
-"""wikiOrder — builds the connection graph across approved pages in a domain.
+"""wikiGraph — builds the connection graph across approved pages in a domain.
 
 Deterministic (no LLM): scans every approved page and extracts three edge
 types, then writes ``domains/<domain>/indexes/connections.json``.
@@ -174,7 +174,7 @@ def _build_graph(domain: str, repo_root: Path) -> dict:
 def _write_connections(repo_root: Path, domain: str, graph: dict) -> str:
     payload = {
         "generated_at": now_iso(),
-        "generated_by": "wikiOrder",
+        "generated_by": "wikiGraph",
         "domain": domain,
         "nodes": graph["nodes"],
         "edges": graph["edges"],
@@ -186,7 +186,7 @@ def _write_connections(repo_root: Path, domain: str, graph: dict) -> str:
     return out.relative_to(repo_root).as_posix()
 
 
-def run_wiki_order(
+def run_wiki_graph(
     *,
     meta: "AgentMeta",
     repo_root: Path,

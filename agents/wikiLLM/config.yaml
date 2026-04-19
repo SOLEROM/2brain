@@ -1,0 +1,26 @@
+name: wikiLLM
+description: >
+  Builds and maintains the wiki root at domains/<d>/index.md. Reads every
+  approved page in the domain plus the domain's schema.md, then asks the
+  LLM to produce an informative landing page grouped by theme with
+  [[wikilinks]] into the wiki. This is the curated entry point surfaced
+  by the Wiki tab's "wiki" view.
+
+# Manual by default — re-run after a batch of approvals so the landing
+# page reflects fresh content. Daily is a reasonable automated choice.
+schedule: manual
+
+# Accepted for interface parity but ignored — the index is a global
+# rollup of the entire domain, so every run reconsiders all pages.
+work_scope: all
+
+# Leave blank to process every domain under domains/, or pin to one.
+domain: edge-ai
+
+# LLM settings
+model: claude-sonnet-4-6
+max_tokens: 4096
+max_pages: 80            # cap pages included in the catalog prompt
+max_body_chars: 400      # preview chars per page passed to the LLM
+max_context_chars: 60000 # hard cap on catalog block size
+include_candidates: false  # by default the root curates approved knowledge only

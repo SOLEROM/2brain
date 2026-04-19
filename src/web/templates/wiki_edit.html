@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% set nav_active = 'wiki' %}
+{% block title %}Edit: {{ fm.title or rel_path }}{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+  <a href="/wiki/{{ domain }}">← Wiki</a> /
+  <a href="/wiki/{{ domain }}/page/{{ rel_path }}"><code>{{ rel_path }}</code></a> /
+  <span>edit</span>
+</div>
+
+<h1>Edit page</h1>
+<p class="muted">
+  Editing the raw markdown (frontmatter + body). Saving overwrites the working version;
+  git history preserves the previous one. <code>updated_at</code> is bumped automatically on save.
+</p>
+
+{% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
+
+<form method="post" action="/wiki/{{ domain }}/page/{{ rel_path }}/edit" style="margin-top:12px;">
+  <textarea name="raw_content"
+            rows="32"
+            spellcheck="false"
+            style="width:100%; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.45;"
+            required>{{ raw_content }}</textarea>
+  <div style="margin-top:10px; display:flex; gap:8px;">
+    <button type="submit">💾 Save</button>
+    <a href="/wiki/{{ domain }}/page/{{ rel_path }}" class="btn btn-secondary" style="text-decoration:none;">Cancel</a>
+  </div>
+</form>
+{% endblock %}

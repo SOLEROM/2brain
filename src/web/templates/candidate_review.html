@@ -29,6 +29,28 @@
     <div>{% for t in fm.tags %}<span class="tag">{{ t }}</span>{% endfor %}</div>
     {% endif %}
 
+    {% if fm.sources %}
+    <h3>Sources</h3>
+    <ul style="padding-left: 16px; margin: 0; font-size: 13px;">
+      {% for src in fm.sources %}
+        {% if src is mapping %}
+          <li>
+            {% if src.url %}<a href="{{ src.url }}" rel="noopener" target="_blank">{{ src.title or src.url }}</a>
+            {% elif src.raw_id %}<a href="/sources/{{ src.raw_id }}">{{ src.title or src.raw_id }}</a>
+            {% else %}{{ src.title or '(source)' }}{% endif %}
+            {% if src.raw_id and src.url %}<div class="subtle"><a href="/sources/{{ src.raw_id }}"><code>{{ src.raw_id }}</code></a></div>{% endif %}
+          </li>
+        {% elif src is string and (src.startswith('http://') or src.startswith('https://')) %}
+          <li><a href="{{ src }}" rel="noopener" target="_blank" style="word-break: break-all;">{{ src }}</a></li>
+        {% elif src is string and src.startswith('raw_') %}
+          <li><a href="/sources/{{ src }}"><code>{{ src }}</code></a></li>
+        {% else %}
+          <li><code>{{ src }}</code></li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+    {% endif %}
+
     {% if fm.raw_ids %}
     <h3>Raw Sources</h3>
     <ul style="padding-left: 16px; margin: 0; font-size: 13px;">

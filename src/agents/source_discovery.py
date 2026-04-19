@@ -188,7 +188,8 @@ def run_source_discovery(
     if not domain:
         raise ValueError("sourceDiscovery requires `domain` in config.yaml.")
 
-    model = str(meta.config.get("model") or "claude-sonnet-4-6")
+    from src.web.routes.shared import get_models_settings
+    model = str(meta.config.get("model") or get_models_settings(repo_root)["main"])
     max_tokens = int(meta.config.get("max_tokens", 2048))
     max_pages = int(meta.config.get("max_pages", 20))
     max_chars = int(meta.config.get("max_context_chars", 40_000))

@@ -1,4 +1,4 @@
-name: wikiOrder
+name: wikiGraph
 description: >
   Builds the connection graph across all approved pages in a domain. Scans
   bodies for [[wikilinks]], the related_pages frontmatter field, and shared

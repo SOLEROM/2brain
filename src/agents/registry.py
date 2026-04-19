@@ -58,10 +58,16 @@ def _register_builtin_agents() -> None:
         log.warning("failed to register conflicAgent: %s", exc)
 
     try:
-        from src.agents.wiki_order import run_wiki_order
-        AGENT_RUN_FNS["wikiOrder"] = run_wiki_order
+        from src.agents.wiki_graph import run_wiki_graph
+        AGENT_RUN_FNS["wikiGraph"] = run_wiki_graph
     except Exception as exc:
-        log.warning("failed to register wikiOrder: %s", exc)
+        log.warning("failed to register wikiGraph: %s", exc)
+
+    try:
+        from src.agents.wiki_llm import run_wiki_llm
+        AGENT_RUN_FNS["wikiLLM"] = run_wiki_llm
+    except Exception as exc:
+        log.warning("failed to register wikiLLM: %s", exc)
 
 
 _register_builtin_agents()

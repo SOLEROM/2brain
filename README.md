@@ -43,19 +43,22 @@ Root `/` redirects to `/wiki/<current_domain>`. Top nav is ordered so readers la
 
 | URL | Purpose |
 |-----|---------|
-| `/wiki/<domain>` | Browse approved pages — **list / cards / compact** views with title + date + tag filters |
-| `/wiki/<domain>/page/<rel_path>` | Read a single approved page |
+| `/wiki/<domain>` | Browse approved pages — **wiki / graph / list / cards / compact** views with title + date + tag filters. Wiki view renders the LLM-maintained `index.md` landing page + an orphans chapter; graph view is an interactive Cytoscape map of wikilink / shared-source / related edges |
+| `/wiki/<domain>/page/<rel_path>` | Read a single approved page. **Edit** button opens a markdown editor that overwrites the working version (git preserves history, `updated_at` auto-bumps on save) |
 | `/ingest` | Add a raw source (URL or pasted text). GitHub URLs auto-fetch README + top-level tree. |
 | `/digest` | Run the digest agent with a live SSE event log (verbose by default). Shows in-progress jobs. |
 | `/candidates/<domain>` | Review queue — approve (optionally dropping raw source), reject, or delete |
 | `/candidates/<domain>/<file>` | Candidate detail with rendered markdown + raw editor |
 | `/query/<domain>?q=...` | Substring-scored search over approved + candidate pages |
+| `/ask/<domain>?q=...` | LLM-grounded Ask — answers use approved pages (plus optional candidates) with `[APPROVED]`/`[CANDIDATE]` citations |
 | `/health/<domain>` | Lint report — low-confidence / contradictions / orphans / stale / stuck jobs |
+| `/agents` | Catalogue of registered agents (wikiGraph, wikiLLM, deepSearch, …) — schedule, last-run status, Run-now |
+| `/agents/<name>` | Agent detail — edit `config.yaml` (model pick, schedule, tokens, domain, prompt) and `prompt.md`; manual trigger |
 | `/jobs` | All job records. Per-row checkboxes + bulk delete + delete-all per state / globally |
 | `/jobs/<state>/<file>` | Job detail with full event log (auto-refreshes while running) |
 | `/sources` | Every raw source — Read / Digest / Delete |
 | `/sources/<raw_id>` | Raw source preview + metadata |
-| `/config` | Edit `config/app.yaml` — domain, theme, source types, suggested tags, digest limits, lint thresholds |
+| `/config` | Edit `config/app.yaml` — add/rename/delete domains, model catalog (main + secondary + available), theme, source types, suggested tags, digest limits, lint thresholds. Domain delete requires typing the name twice. |
 | `/about` | System explainer |
 
 The top bar has:
@@ -127,6 +130,29 @@ from src.approval import approve_candidate
 
 approve_candidate("cand_20260416_161007_nnapi-overview_a83f91c2.md", "edge-ai", reviewed_by="vlad")
 ```
+
+## Edit an approved page
+
+Approved pages aren't frozen — open any page under `/wiki/<domain>/page/...`
+and click **Edit page** to rewrite its markdown (frontmatter + body) in a
+textarea. Saving overwrites the working file; git history keeps the prior
+version, `updated_at` is bumped automatically, and the change is logged
+to `domains/<domain>/log.md` and `audit/approvals.log`.
+
+## Agents
+
+Registered background workers live under `agents/<name>/` (config, prompt,
+state, seen ledger). The built-ins:
+
+- **digest** — raw → candidate pipeline (runs on-demand via `/digest`).
+- **wikiGraph** — no-LLM builder for `indexes/connections.json`; powers the graph view.
+- **wikiLLM** — maintains `domains/<d>/index.md` as the wiki landing page.
+- **deepSearch** — investigates a research question across the wiki, files a `deep-research-report` candidate.
+
+Each agent's model, schedule (`off` / `manual` / `hourly` / `daily` / `weekly`),
+work scope (`all` / `new`), and prompt are editable from `/agents/<name>`.
+The model dropdown is populated from `config/app.yaml → models.available`,
+with `models.main` / `models.secondary` flagged inline.
 
 ## Query the knowledge base
 

@@ -2,7 +2,7 @@
 from pathlib import Path
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from src.config import (
     DEFAULT_APP_CONFIG,
@@ -10,8 +10,9 @@ from src.config import (
     dump_app_config,
     load_app_config,
 )
+from src.domains import DomainError, create_domain, delete_domain, rename_domain
 from src.utils import atomic_write
-from src.web.routes.shared import list_domains
+from src.web.routes.shared import get_models_settings, list_domains
 
 router = APIRouter()
 
@@ -50,21 +51,110 @@ def _render(
 ) -> HTMLResponse:
     templates = request.app.state.templates
     repo_root: Path = request.app.state.repo_root
+    models = get_models_settings(repo_root)
     return templates.TemplateResponse(request, "config.html", {
         "cfg": cfg,
         "domains": list_domains(repo_root),
         "config_path": str(app_config_path(repo_root)),
         "available_themes": (cfg.get("ui") or {}).get("themes")
             or DEFAULT_APP_CONFIG["ui"]["themes"],
+        "available_models": models["available"],
+        "main_model": models["main"],
+        "secondary_model": models["secondary"],
         "message": message,
         "error": error,
     })
 
 
 @router.get("/config", response_class=HTMLResponse)
-async def config_view(request: Request):
+async def config_view(
+    request: Request,
+    message: str = "",
+    error: str = "",
+):
     repo_root: Path = request.app.state.repo_root
-    return _render(request, cfg=load_app_config(repo_root=repo_root))
+    return _render(
+        request,
+        cfg=load_app_config(repo_root=repo_root),
+        message=message, error=error,
+    )
+
+
+@router.post("/config/domain/create")
+async def config_domain_create(request: Request, new_domain: str = Form(...)):
+    repo_root: Path = request.app.state.repo_root
+    try:
+        name = create_domain(new_domain, repo_root)
+    except DomainError as exc:
+        return RedirectResponse(
+            f"/config?error={_q(str(exc))}", status_code=303,
+        )
+    return RedirectResponse(
+        f"/config?message={_q(f'Domain {name!r} created. Start ingesting.')}",
+        status_code=303,
+    )
+
+
+@router.post("/config/domain/rename")
+async def config_domain_rename(
+    request: Request,
+    old_domain: str = Form(...),
+    new_domain: str = Form(...),
+):
+    repo_root: Path = request.app.state.repo_root
+    try:
+        summary = rename_domain(old_domain, new_domain, repo_root)
+    except DomainError as exc:
+        return RedirectResponse(
+            f"/config?error={_q(str(exc))}", status_code=303,
+        )
+    bits = [
+        f"Renamed {summary.old!r} → {summary.new!r}",
+        f"{summary.pages_updated} page(s)",
+        f"{summary.candidates_updated} candidate(s)",
+    ]
+    if summary.agents_updated:
+        bits.append(f"agents: {', '.join(summary.agents_updated)}")
+    if summary.app_default_updated:
+        bits.append("default_domain updated")
+    resp = RedirectResponse(f"/config?message={_q('. '.join(bits))}", status_code=303)
+    # Users currently scoped to the old cookie value would otherwise get
+    # bounced back to the default — clear it so they re-pick from the new list.
+    resp.delete_cookie("2brain-domain", path="/")
+    return resp
+
+
+@router.post("/config/domain/delete")
+async def config_domain_delete(
+    request: Request,
+    domain: str = Form(...),
+    confirm_1: str = Form(...),
+    confirm_2: str = Form(...),
+):
+    repo_root: Path = request.app.state.repo_root
+    try:
+        summary = delete_domain(domain, confirm_1, confirm_2, repo_root)
+    except DomainError as exc:
+        return RedirectResponse(
+            f"/config?error={_q(str(exc))}", status_code=303,
+        )
+    bits = [f"Deleted domain {summary.domain!r}"]
+    if summary.candidates_dir_removed:
+        bits.append("candidates tree removed")
+    if summary.agents_cleared:
+        bits.append(f"cleared agent configs: {', '.join(summary.agents_cleared)}")
+    if summary.app_default_fell_back_to:
+        bits.append(f"default_domain → {summary.app_default_fell_back_to!r}")
+    resp = RedirectResponse(
+        f"/config?message={_q('. '.join(bits))}", status_code=303,
+    )
+    resp.delete_cookie("2brain-domain", path="/")
+    return resp
+
+
+def _q(s: str) -> str:
+    from urllib.parse import quote
+    return quote(s, safe="")
 
 
 @router.post("/config", response_class=HTMLResponse)
@@ -85,6 +175,9 @@ async def config_save(
     lint_low_confidence_threshold: str = Form(""),
     ui_default_theme: str = Form("light"),
     ui_themes: str = Form(""),
+    models_available: str = Form(""),
+    models_main: str = Form(""),
+    models_secondary: str = Form(""),
 ):
     repo_root: Path = request.app.state.repo_root
     existing = load_app_config(repo_root=repo_root)
@@ -131,6 +224,20 @@ async def config_save(
     new_cfg["ui"] = {
         "default_theme": chosen_theme,
         "themes": parsed_themes,
+    }
+
+    avail = _lines_to_list(models_available) or defaults["models"]["available"]
+    main = (models_main.strip() or defaults["models"]["main"])
+    secondary = (models_secondary.strip() or defaults["models"]["secondary"])
+    # Any custom main/secondary the user typed gets promoted into the
+    # available list so it shows up in later <select> dropdowns.
+    for m in (main, secondary):
+        if m and m not in avail:
+            avail.insert(0, m)
+    new_cfg["models"] = {
+        "available": avail,
+        "main": main,
+        "secondary": secondary,
     }
 
     try:

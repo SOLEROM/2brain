@@ -789,7 +789,7 @@ frontmatter_validation:
 
 ## Rules the Agent Must Follow
 
-1. **Never modify raw sources.** `inbox/raw/` is immutable once written.
+1. **Never modify raw sources.** `inbox/raw/` is immutable once written. This includes the source URL in `metadata.yaml` — it's the canonical pointer back to the input and must be preserved verbatim in every candidate's `sources:` frontmatter (no trimming, no query-param stripping, no URL encoding changes). The digest pipeline enforces this in `enforce_raw_source_url()`.
 2. **Never promote candidates to approved without human action.** Moving files from `candidates/` to `domains/` is a human-triggered operation only.
 3. **Always show confidence.** Every page, every cited result, every research report.
 4. **Always label candidate content.** Use `[CANDIDATE]` in citations and answers.

@@ -63,6 +63,27 @@ def get_ui_settings(repo_root: Path) -> dict:
     return cfg.get("ui") or {}
 
 
+def get_models_settings(repo_root: Path) -> dict:
+    """Return {available: list[str], main: str, secondary: str}.
+
+    Merges with built-in defaults so the UI and agents never crash on a
+    partially-filled or missing `models:` block. If `main`/`secondary` point
+    at names not in `available`, they're still returned verbatim — users
+    might have added a custom model and we don't want to silently swap it.
+    """
+    from src.config import DEFAULT_APP_CONFIG
+    cfg = load_app_config(repo_root=repo_root)
+    defaults = DEFAULT_APP_CONFIG["models"]
+    m = cfg.get("models") or {}
+    available = m.get("available") or defaults["available"]
+    if not isinstance(available, list) or not available:
+        available = list(defaults["available"])
+    available = [str(x).strip() for x in available if str(x).strip()]
+    main = str(m.get("main") or defaults["main"]).strip() or defaults["main"]
+    secondary = str(m.get("secondary") or defaults["secondary"]).strip() or defaults["secondary"]
+    return {"available": available, "main": main, "secondary": secondary}
+
+
 def load_yaml(path: Path) -> dict:
     if not path.exists():
         return {}
