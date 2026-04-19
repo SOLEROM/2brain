@@ -4,20 +4,110 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>2brain — {% block title %}{% endblock %}</title>
+  {% set _ui = ui_defaults() %}
+  <script>
+  window.__2BRAIN_THEMES__ = {{ _ui.ui_themes | tojson }};
+  window.__2BRAIN_DEFAULT_THEME__ = {{ _ui.ui_default_theme | tojson }};
+  (function() {
+    try {
+      var t = localStorage.getItem('2brain-theme') || window.__2BRAIN_DEFAULT_THEME__ || 'light';
+      document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {
+      document.documentElement.setAttribute('data-theme', window.__2BRAIN_DEFAULT_THEME__ || 'light');
+    }
+  })();
+  </script>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='50' font-size='50'%3E🧠%3C/text%3E%3C/svg%3E">
 </head>
 <body>
-  <nav>
-    <a href="/">2brain</a>
-    <span>|</span>
-    <a href="/ingest">Ingest</a>
-    <a href="/digest">Digest</a>
-    <a href="/candidates/{{ domain | default('edge-ai') }}">Review Queue</a>
-    <a href="/wiki/{{ domain | default('edge-ai') }}">Wiki</a>
-    <a href="/query/{{ domain | default('edge-ai') }}">Query</a>
-  </nav>
-  <main>
+  {% set _state_current = request.state.current_domain if request and request.state is defined and request.state.current_domain is defined else 'edge-ai' %}
+  {% set _state_all = request.state.all_domains if request and request.state is defined and request.state.all_domains is defined else ['edge-ai'] %}
+  {% set d = domain | default(_state_current) %}
+  {% set _all_domains = domains | default(_state_all) %}
+  {% set nav = nav_active | default('') %}
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a href="/" class="brand">
+        <span class="brand-mark">🧠</span>
+        <span class="brand-text">2brain</span>
+      </a>
+      <nav class="main-nav">
+        <a href="/wiki/{{ d }}" data-g="read" class="{% if nav == 'wiki' %}active{% endif %}">Wiki</a>
+        <a href="/ask/{{ d }}" data-g="read" class="{% if nav == 'ask' %}active{% endif %}">Ask</a>
+        <a href="/query/{{ d }}" data-g="read" class="{% if nav == 'query' %}active{% endif %}">Query</a>
+        <span class="nav-sep" aria-hidden="true"></span>
+        <a href="/ingest" data-g="pipe" class="{% if nav == 'ingest' %}active{% endif %}">Ingest</a>
+        <a href="/digest" data-g="pipe" class="{% if nav == 'digest' %}active{% endif %}">Digest</a>
+        <a href="/candidates/{{ d }}" data-g="pipe" class="{% if nav == 'candidates' %}active{% endif %}">Review</a>
+        <span class="nav-sep" aria-hidden="true"></span>
+        <a href="/jobs" data-g="ops" class="{% if nav == 'jobs' %}active{% endif %}">Jobs</a>
+        <a href="/health/{{ d }}" data-g="ops" class="{% if nav == 'health' %}active{% endif %}">Health</a>
+        <a href="/config" data-g="ops" class="{% if nav == 'config' %}active{% endif %}">Config</a>
+        <span class="nav-sep" aria-hidden="true"></span>
+        <a href="/agents" data-g="meta" class="{% if nav == 'agents' %}active{% endif %}">Agents</a>
+        <a href="/about" data-g="meta" class="{% if nav == 'about' %}active{% endif %}">About</a>
+      </nav>
+      {% if _all_domains and _all_domains|length > 1 %}
+      <div class="domain-picker">
+        <label for="domain-select" class="muted">Domain:</label>
+        <select id="domain-select" onchange="switchDomain(this.value)">
+          {% for dom in _all_domains %}
+          <option value="{{ dom }}" {% if dom == d %}selected{% endif %}>{{ dom }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <button type="button" id="theme-toggle" class="theme-toggle" title="Switch theme" aria-label="Switch theme">
+        <span id="theme-toggle-label">Theme</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="page">
     {% block content %}{% endblock %}
   </main>
+
+  <script>
+  function switchDomain(name) {
+    document.cookie = '2brain-domain=' + encodeURIComponent(name) +
+                      '; path=/; max-age=2592000; samesite=lax';
+    const path = window.location.pathname;
+    const rx = /^\/(candidates|wiki|query|ask|health)\/[^\/]+/;
+    if (rx.test(path)) {
+      window.location.href = path.replace(rx, '/$1/' + encodeURIComponent(name));
+    } else {
+      window.location.reload();
+    }
+  }
+
+  (function() {
+    var THEMES = (window.__2BRAIN_THEMES__ && window.__2BRAIN_THEMES__.length)
+      ? window.__2BRAIN_THEMES__
+      : ['light', 'dark', 'hackers-green'];
+    var LABELS = { 'light': '☀ Light', 'dark': '🌙 Dark', 'hackers-green': '💾 Hackers' };
+    function labelFor(t) {
+      if (LABELS[t]) return LABELS[t];
+      return t.replace(/-/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+    }
+    var btn = document.getElementById('theme-toggle');
+    var lbl = document.getElementById('theme-toggle-label');
+    function apply(t) {
+      document.documentElement.setAttribute('data-theme', t);
+      try { localStorage.setItem('2brain-theme', t); } catch (e) {}
+      if (lbl) lbl.textContent = labelFor(t);
+    }
+    var current = document.documentElement.getAttribute('data-theme') || THEMES[0];
+    apply(current);
+    if (btn) {
+      btn.addEventListener('click', function() {
+        var cur = document.documentElement.getAttribute('data-theme') || THEMES[0];
+        var idx = THEMES.indexOf(cur);
+        var next = THEMES[(idx + 1) % THEMES.length];
+        apply(next);
+      });
+    }
+  })();
+  </script>
 </body>
 </html>

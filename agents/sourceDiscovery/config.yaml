@@ -1,0 +1,15 @@
+name: sourceDiscovery
+description: Proposes new URLs to ingest for a domain. Reads the approved wiki (optionally
+  candidates) to find gaps and open questions, then calls the LLM to suggest external
+  sources. Appends to domains/<d>/indexes/suggested-sources.md. NEVER ingests on its
+  own — human copies URLs to the Ingest form.
+schedule: weekly
+work_scope: all
+domain: edge-ai
+model: claude-sonnet-4-6
+max_tokens: 2048
+max_pages: 20
+max_context_chars: 40000
+include_candidates: true
+max_suggestions_per_run: 10
+question: ''

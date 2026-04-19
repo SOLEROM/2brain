@@ -39,14 +39,41 @@ python -m uvicorn src.web.app:get_app --factory --host 127.0.0.1 --port 5000
 
 ## Web UI pages
 
+Root `/` redirects to `/wiki/<current_domain>`. Top nav is ordered so readers land on the wiki first.
+
 | URL | Purpose |
 |-----|---------|
-| `/candidates/edge-ai` | Review queue — pending candidates awaiting approval |
-| `/candidates/edge-ai/<file>` | Review a single candidate page |
-| `/wiki/edge-ai` | Browse approved knowledge pages |
-| `/query/edge-ai?q=NNAPI` | Search approved + candidate pages |
+| `/wiki/<domain>` | Browse approved pages — **list / cards / compact** views with title + date + tag filters |
+| `/wiki/<domain>/page/<rel_path>` | Read a single approved page |
+| `/ingest` | Add a raw source (URL or pasted text). GitHub URLs auto-fetch README + top-level tree. |
+| `/digest` | Run the digest agent with a live SSE event log (verbose by default). Shows in-progress jobs. |
+| `/candidates/<domain>` | Review queue — approve (optionally dropping raw source), reject, or delete |
+| `/candidates/<domain>/<file>` | Candidate detail with rendered markdown + raw editor |
+| `/query/<domain>?q=...` | Substring-scored search over approved + candidate pages |
+| `/health/<domain>` | Lint report — low-confidence / contradictions / orphans / stale / stuck jobs |
+| `/jobs` | All job records. Per-row checkboxes + bulk delete + delete-all per state / globally |
+| `/jobs/<state>/<file>` | Job detail with full event log (auto-refreshes while running) |
+| `/sources` | Every raw source — Read / Digest / Delete |
+| `/sources/<raw_id>` | Raw source preview + metadata |
+| `/config` | Edit `config/app.yaml` — domain, theme, source types, suggested tags, digest limits, lint thresholds |
+| `/about` | System explainer |
+
+The top bar has:
+
+- A **domain picker** (session-wide; persists in a cookie — no per-page domain dropdowns).
+- A **theme toggle** that cycles through `light → dark → hackers-green` (or whatever's in `ui.themes`). Choice persists in `localStorage`.
 
 ## Ingest a source
+
+Simplest: open `/ingest` in the web UI, paste a URL or text, click Ingest.
+
+- **GitHub URLs** are handled specially: the ingester fetches the repo's
+  README (via the GitHub API) **and** the top-level directory tree,
+  composes them into one markdown document, and tags the raw source
+  `github` + owner. Blob URLs (`.../blob/<branch>/<path>`) fetch the raw
+  file content.
+- **Other URLs** are fetched with `httpx.get` and the HTML `<title>` is
+  extracted as the source title.
 
 Tell the agent in a Claude Code session:
 
@@ -83,10 +110,15 @@ Or tell the agent: `Digest raw_20260416_153042_nnapi-overview_a91f03bc into edge
 
 ## Approve a candidate
 
-1. Open the web UI → **Review Queue**
+1. Open the web UI → **Review**
 2. Click a candidate title to read it
 3. Click **Approve** — the page moves to `domains/edge-ai/concepts/` (or wherever `target_path` points)
 4. Click **Reject** to move it to `candidates/edge-ai/rejected/`
+
+Approving a `create`/`update`/`replace`/`merge` candidate will **also delete
+its cited raw source(s)** by default (checkbox on the detail page, hidden
+input on the list view — uncheck to preserve the raw). Destroys nothing on
+`archive`/`move`/`split`.
 
 Or from Python:
 
@@ -151,3 +183,10 @@ python -m pytest tests/ -v
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ANTHROPIC_API_KEY` | Yes (for digest/research) | Your Anthropic API key |
+
+## Further reading
+
+- `CLAUDE.md` — full operating manual (file layout, naming, page format,
+  approval semantics, web UI reference).
+- `lessons-gui.md` — GUI best practices / design rules distilled from this
+  project. Reusable as a skill file for future Python + Jinja apps.

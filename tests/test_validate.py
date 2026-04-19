@@ -2,6 +2,30 @@ import pytest
 from pathlib import Path
 from src.validate import validate_frontmatter, parse_frontmatter, check_path_traversal
 
+
+def test_parse_frontmatter_coerces_yaml_datetimes_to_strings(tmp_path):
+    """Unquoted ISO timestamps in YAML get parsed as datetime objects; ensure
+    the read boundary coerces them (including nested lists) to strings so
+    templates can slice them (e.g. ``fm.created_at[:10]``)."""
+    p = tmp_path / "page.md"
+    p.write_text(
+        "---\n"
+        "title: Dated Page\n"
+        "created_at: 2026-04-17 19:19:45+00:00\n"
+        "updated_at: '2026-04-17T19:20:33+00:00'\n"
+        "sources:\n"
+        "  - id: raw_abc\n"
+        "    accessed_at: 2026-04-17 19:19:45+00:00\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+    fm, _ = parse_frontmatter(p)
+    assert isinstance(fm["created_at"], str)
+    assert fm["created_at"].startswith("2026-04-17T19:19:45")
+    assert fm["created_at"][:10] == "2026-04-17"
+    assert isinstance(fm["sources"][0]["accessed_at"], str)
+
 VALID_PAGE = """\
 ---
 title: "Test Page"

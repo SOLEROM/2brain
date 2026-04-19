@@ -1,22 +1,30 @@
 {% extends "base.html" %}
+{% set nav_active = 'ingest' %}
 {% block title %}Ingest Source{% endblock %}
 {% block content %}
 <h1>Ingest Source</h1>
 <p class="page-subtitle">Add a raw source to the inbox. Paste content or provide a URL to fetch.</p>
 
 {% if error %}
-<div class="alert alert-error">{{ error }}</div>
+<div class="alert alert-error"><strong>Error:</strong> {{ error }}</div>
 {% endif %}
 
 {% if result %}
 <div class="alert alert-success">
   <strong>Ingested:</strong> {{ result.title }}<br>
-  <strong>Raw ID:</strong> <code>{{ result.raw_id }}</code><br>
-  {% if result.domain_hint %}
-  <strong>Domain hint:</strong> {{ result.domain_hint }}<br>
+  <strong>Raw ID:</strong> <code>{{ result.raw_id }}</code>
+  {% if result.domain_hint %}<br><strong>Domain hint:</strong> {{ result.domain_hint }}{% endif %}
+  {% if result.media_attempted %}
+    <br><strong>Media:</strong>
+    {% if result.media_count %}
+      downloaded {{ result.media_count }} asset{{ '' if result.media_count == 1 else 's' }} (best-effort)
+    {% else %}
+      none found or all downloads failed
+    {% endif %}
   {% endif %}
-  <div style="margin-top:12px">
-    <a href="/digest?raw_id={{ result.raw_id }}&domain={{ result.domain_hint or domain }}" class="btn-approve">→ Digest this source</a>
+  <div style="margin-top: 12px;">
+    <a href="/digest?raw_id={{ result.raw_id }}&amp;domain={{ result.domain_hint or domain }}" class="btn">→ Digest this source</a>
+    <a href="/sources/{{ result.raw_id }}" class="btn-secondary">View raw source</a>
   </div>
 </div>
 {% endif %}
@@ -24,28 +32,36 @@
 <div class="card">
   <form method="post" action="/ingest" id="ingest-form">
     <div class="form-tabs">
-      <button type="button" class="tab-btn active" onclick="switchTab('url')">Fetch URL</button>
-      <button type="button" class="tab-btn" onclick="switchTab('paste')">Paste Content</button>
+      <button type="button" class="tab-btn active" data-tab="url">Fetch URL</button>
+      <button type="button" class="tab-btn" data-tab="paste">Paste Content</button>
     </div>
 
     <div id="tab-url" class="tab-panel">
       <div class="form-group">
         <label for="url">URL</label>
-        <input type="url" name="url" id="url" placeholder="https://example.com/article" value="{{ form.url if form else '' }}" class="input-wide">
+        <input type="url" name="url" id="url" placeholder="https://example.com/article" value="{{ form.url if form else '' }}">
+      </div>
+      <div class="form-group">
+        <label style="font-weight: normal;">
+          <input type="checkbox" name="download_media" id="download_media" value="on"
+                 {% if form and form.download_media %}checked{% endif %}>
+          Download media
+          <span class="muted" style="font-weight: normal;">(best-effort — images, PDFs, videos referenced by the page. Default: off — only text is saved.)</span>
+        </label>
       </div>
     </div>
 
     <div id="tab-paste" class="tab-panel" style="display:none">
       <div class="form-group">
         <label for="content">Content</label>
-        <textarea name="content" id="content" rows="10" placeholder="Paste article, notes, or documentation here...">{{ form.content if form else '' }}</textarea>
+        <textarea name="content" id="content" rows="12" placeholder="Paste article, notes, or documentation here…">{{ form.content if form else '' }}</textarea>
       </div>
     </div>
 
     <div class="form-row">
       <div class="form-group">
         <label for="title">Title <span class="muted">(optional for URL — auto-extracted)</span></label>
-        <input type="text" name="title" id="title" value="{{ form.title if form else '' }}" class="input-wide">
+        <input type="text" name="title" id="title" value="{{ form.title if form else '' }}">
       </div>
     </div>
 
@@ -69,22 +85,97 @@
       </div>
     </div>
 
+    <div class="form-group">
+      <label for="tags">Tags <span class="muted">(comma-separated)</span></label>
+      <input type="text" name="tags" id="tags" list="suggested-tags"
+             value="{{ form.tags if form and form.tags else '' }}"
+             placeholder="{{ (suggested_tags[:4] | join(', ')) if suggested_tags else 'e.g. benchmark, npu, voxl' }}">
+      {% if suggested_tags %}
+      <datalist id="suggested-tags">
+        {% for t in suggested_tags %}<option value="{{ t }}">{% endfor %}
+      </datalist>
+      <span class="form-hint">{{ suggested_tags|length }} suggestion{{ '' if suggested_tags|length == 1 else 's' }} configured in <a href="/config">Config</a>.</span>
+      {% else %}
+      <span class="form-hint">Configure tag suggestions on the <a href="/config">Config</a> page.</span>
+      {% endif %}
+    </div>
+
     <div class="form-actions">
-      <button type="submit" class="btn-approve">Ingest</button>
+      <button type="submit" class="btn">Ingest</button>
+      <span class="form-hint">Raw sources are stored under <code>inbox/raw/</code> and never modified.</span>
     </div>
   </form>
 </div>
 
-<script>
-function switchTab(name) {
-  document.getElementById('tab-url').style.display = name === 'url' ? '' : 'none';
-  document.getElementById('tab-paste').style.display = name === 'paste' ? '' : 'none';
-  document.querySelectorAll('.tab-btn').forEach((b, i) => {
-    b.classList.toggle('active', (i === 0 && name === 'url') || (i === 1 && name === 'paste'));
-  });
-}
-{% if form and form.content %}
-switchTab('paste');
+<div class="row" style="justify-content: space-between; margin-top: 28px;">
+  <div>
+    <h2 style="margin: 0;">Raw Sources</h2>
+    <p class="page-subtitle" style="margin: 2px 0 0;">
+      Immutable sources stored in <code>inbox/raw/</code>. {{ sources|length }} total.
+    </p>
+  </div>
+</div>
+
+{% if sources %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Type</th>
+        <th>Ingested</th>
+        <th>Domain hint</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sources %}
+      <tr>
+        <td>
+          <a href="/sources/{{ s.raw_id }}"><strong>{{ s.title }}</strong></a>
+          <div class="subtle"><code>{{ s.raw_id }}</code></div>
+        </td>
+        <td>{{ s.source_type or '—' }}</td>
+        <td class="subtle">{{ s.ingested_at[:10] if s.ingested_at else '—' }}</td>
+        <td>{{ s.domain_hint or '—' }}</td>
+        <td>
+          <span class="badge badge-{{ 'approved' if s.fetch_status == 'ok' else 'failed' }}">{{ s.fetch_status }}</span>
+        </td>
+        <td style="text-align: right; white-space: nowrap;">
+          <a href="/sources/{{ s.raw_id }}" class="btn-secondary">Read</a>
+          <a href="/digest?raw_id={{ s.raw_id }}{% if s.domain_hint %}&amp;domain={{ s.domain_hint }}{% endif %}" class="btn-secondary">Digest</a>
+          <form method="post" action="/sources/{{ s.raw_id }}/delete" class="inline-form"
+                onsubmit="return confirm('Delete raw source {{ s.raw_id }} permanently? Candidates citing it will still reference its id.');">
+            <button type="submit" class="btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty" style="margin-top: 12px;">
+  <p class="muted" style="margin: 0;">No raw sources yet — ingest your first one above.</p>
+</div>
 {% endif %}
+
+<script>
+(function() {
+  const buttons = document.querySelectorAll('.tab-btn');
+  const panels = {
+    url: document.getElementById('tab-url'),
+    paste: document.getElementById('tab-paste'),
+  };
+  function show(which) {
+    for (const [name, panel] of Object.entries(panels)) {
+      panel.style.display = name === which ? '' : 'none';
+    }
+    buttons.forEach(b => b.classList.toggle('active', b.dataset.tab === which));
+  }
+  buttons.forEach(b => b.addEventListener('click', () => show(b.dataset.tab)));
+  {% if form and form.content and not form.url %}show('paste');{% endif %}
+})();
 </script>
 {% endblock %}

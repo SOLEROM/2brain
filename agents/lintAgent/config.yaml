@@ -1,0 +1,10 @@
+name: lintAgent
+description: Scheduled wiki health check. Regenerates domains/<d>/indexes/* and flags
+  low-confidence pages, unresolved contradictions, orphans, stale pages, stuck jobs,
+  and index drift. Deterministic — no LLM call.
+schedule: manual
+work_scope: all
+domain: edge-ai
+question: ''
+model: ''
+include_candidates: false

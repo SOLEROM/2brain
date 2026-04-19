@@ -1,0 +1,48 @@
+name: conflicAgent
+description: >
+  Scans the wiki for conflicting facts across pages that could lead to
+  wrong assumptions or conclusions. Unlike lintAgent (which only indexes
+  pre-existing [!contradiction] blocks), conflicAgent actively discovers
+  NEW conflicts via the LLM and files each one as a contradiction-note
+  candidate for human review.
+
+# MANUAL ONLY. Conflict detection is a deliberate review activity — it's
+# LLM-expensive and its output demands careful human arbitration. Do not
+# change to hourly/daily/weekly without a specific reason.
+schedule: manual
+
+# Work scope is accepted for interface conformity but has no material
+# effect here. The agent ALWAYS dedups detected conflicts against the
+# seen ledger (by page-pair + claim-pair fingerprint), regardless of
+# whether scope is "all" or "new", so reruns on the same wiki state do
+# not produce duplicate candidates.
+work_scope: all
+
+domain: edge-ai
+
+# Optional focus override — narrow the scan to a specific theme.
+# Pre-filled on the manual Run button. Leave commented for a full-domain scan.
+# focus: >
+#   Benchmark numbers on VOXL 2 NNAPI delegate.
+
+# LLM settings
+model: claude-sonnet-4-6
+max_tokens: 4096
+
+# Larger context window than sourceDiscovery because conflict detection
+# needs to see claims side-by-side. 24 pages / 80k chars is a safe default.
+max_pages: 24
+max_context_chars: 80000
+
+# Include pending candidates in the scan so candidate-vs-approved
+# conflicts surface BEFORE the candidate is approved.
+include_candidates: true
+
+# Cap on how many conflict candidates to file per run. Prevents a
+# runaway model from drowning the reviewer in low-severity noise.
+max_conflicts_per_run: 10
+
+# Severity floor [0.0, 1.0]. Conflicts below this are dropped before they
+# become candidates. 0.35 mirrors the low-confidence threshold in
+# config/app.yaml — same "worth-looking-at" bar.
+min_severity: 0.35

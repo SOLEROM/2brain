@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+{% set nav_active = 'about' %}
+{% block title %}About{% endblock %}
+{% block content %}
+
+<div class="hero">
+  <div class="hero-mark">🧠</div>
+  <h1>2brain</h1>
+  <p class="hero-tagline">
+    A file-based, multi-domain, <strong>human-approved</strong> AI knowledge wiki.
+  </p>
+  <p class="page-subtitle" style="max-width: 720px; margin: 0 auto;">
+    Raw sources are digested by an agent into candidate Markdown pages. You review each page
+    and approve it into a persistent, Git-backed knowledge tree. Every page carries visible
+    confidence, evidence, and inline contradictions — knowledge compounds instead of being
+    re-derived from scratch on every query.
+  </p>
+</div>
+
+<div class="card">
+  <h2>The Core Idea</h2>
+  <p>
+    Classic RAG re-reads raw documents on every question. 2brain keeps a <strong>synthesized
+    wiki</strong> that an agent grows over time. Cross-references, contradictions, and
+    summaries are already in the page by the time you ask. The human stays in the loop at
+    one — and only one — choke point: <strong>approving candidate pages.</strong>
+  </p>
+  <div class="pipeline">
+    <div class="pipe-step"><div class="pipe-n">1</div><div class="pipe-t">Ingest</div><div class="pipe-d">A raw source lands in <code>inbox/raw/</code> and is never modified again.</div></div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-step"><div class="pipe-n">2</div><div class="pipe-t">Digest</div><div class="pipe-d">The agent reads the domain schema and produces candidate pages with frontmatter, claims, and evidence.</div></div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-step"><div class="pipe-n">3</div><div class="pipe-t">Review</div><div class="pipe-d">You approve, reject, or edit each candidate. Nothing enters the wiki without human action.</div></div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-step"><div class="pipe-n">4</div><div class="pipe-t">Wiki</div><div class="pipe-d">Approved pages live under <code>domains/&lt;domain&gt;/</code>. Git keeps the full history.</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>What Each Tab Does</h2>
+  <p class="page-subtitle" style="margin-top: -4px;">
+    The nav is organized into four color-coded groups — Read · Pipeline · Ops · Meta.
+    Each group has its own accent hue that matches the tab underline in the header.
+  </p>
+
+  <h3 class="tab-group-label tab-g-read">📘 Read — consume knowledge</h3>
+  <div class="feature-grid">
+    <div class="feature feature-read">
+      <h3>📖 Wiki</h3>
+      <p>Browse approved pages grouped by type (topics, concepts, entities, sources,
+      reports, questions). List / cards / compact views with title, date, and tag filters.
+      Click a page to read it with its metadata sidebar, sources, tags, and review trail.</p>
+    </div>
+    <div class="feature feature-read">
+      <h3>💬 Ask</h3>
+      <p>Grounded LLM chat. Uses <code>ask_llm()</code> to answer a question from the
+      approved wiki (optionally including candidates), structured into the four-section
+      CLAUDE.md format with <code>[APPROVED]</code>/<code>[CANDIDATE]</code> citations.
+      Ephemeral — nothing gets filed.</p>
+    </div>
+    <div class="feature feature-read">
+      <h3>🔍 Query</h3>
+      <p>Keyword search across approved pages <em>and</em> pending candidates. Type/tag/status
+      chips, min-confidence slider, scope toggle. Each result is ranked by title/body/tag hits
+      and labeled with its status badge.</p>
+    </div>
+  </div>
+
+  <h3 class="tab-group-label tab-g-pipe">🛠 Pipeline — build knowledge</h3>
+  <div class="feature-grid">
+    <div class="feature feature-pipe">
+      <h3>📥 Ingest</h3>
+      <p>Add a raw source by pasting text or fetching a URL (GitHub repo URLs resolve to
+      README + top-level tree). 2brain stores an immutable copy under
+      <code>inbox/raw/&lt;raw_id&gt;/</code> with full metadata. The same tab lists every raw
+      source ever ingested — click in to read it, jump to digesting, or delete.</p>
+    </div>
+    <div class="feature feature-pipe">
+      <h3>⚙️ Digest</h3>
+      <p>Pick a raw source → the Claude agent reads the domain's <code>schema.md</code>,
+      checks for near-duplicates, and produces candidate pages with required frontmatter and
+      per-claim evidence. For a backlog, use the <strong>digestAgent</strong> on the Agents
+      tab — same pipeline, but batch-drains <code>inbox/raw/</code> by <code>domain_hint</code>
+      with a seen ledger.</p>
+    </div>
+    <div class="feature feature-pipe">
+      <h3>✅ Review</h3>
+      <p>The queue of pending candidates. Each candidate shows its rendered body, target
+      path, confidence, and proposed operation (<em>create / update / replace / merge /
+      archive / move / split</em>). Approve, reject, or edit the raw Markdown. Approval can
+      cascade-drop the cited raw sources.</p>
+    </div>
+  </div>
+
+  <h3 class="tab-group-label tab-g-ops">🧰 Ops — operate the system</h3>
+  <div class="feature-grid">
+    <div class="feature feature-ops">
+      <h3>🗂️ Jobs</h3>
+      <p>Every digest / research / lint / agent run, recorded in <code>jobs/</code> with full
+      event log. Grouped by state (running / completed / failed) with bulk-delete controls.
+      Auto-refreshes while a job is running.</p>
+    </div>
+    <div class="feature feature-ops">
+      <h3>🩺 Health</h3>
+      <p>Runs the lint scanner: low-confidence pages, unresolved contradictions, orphans,
+      stale pages, stale candidates, stuck jobs, and index mismatches. Regenerates the
+      auto-indexes on every run.</p>
+    </div>
+    <div class="feature feature-ops">
+      <h3>⚙️ Config</h3>
+      <p>Edit <code>config/app.yaml</code> from the browser — domain, source types, suggested
+      tags, digest limits, lint thresholds, theme. Unknown keys round-trip so manual edits
+      survive.</p>
+    </div>
+  </div>
+
+  <h3 class="tab-group-label tab-g-meta">🧭 Meta — agents &amp; info</h3>
+  <div class="feature-grid">
+    <div class="feature feature-meta">
+      <h3>🤖 Agents</h3>
+      <p>Registered background agents — each lives in <code>agents/&lt;name&gt;/</code> with
+      its own <code>config.yaml</code>, <code>prompt.md</code>, and <code>seen.json</code>.
+      Currently shipping: <strong>digestAgent</strong> (batch digester),
+      <strong>deepSearch</strong> (files research reports as candidates),
+      <strong>lintAgent</strong>, <strong>conflicAgent</strong>,
+      <strong>sourceDiscovery</strong>. Each can be scheduled
+      (<em>off / manual / hourly / daily / weekly</em>), run on demand, and has its seen
+      ledger reset from the UI.</p>
+    </div>
+    <div class="feature feature-meta">
+      <h3>ℹ️ About</h3>
+      <p>This page — the system explainer, quick start, rules the agent follows, and a
+      reference for candidate operations and confidence scoring.</p>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>How Confidence Works</h2>
+  <p>
+    Every page, every claim, and every search result carries a numeric score from
+    <strong>0.00 to 1.00</strong>. The agent assigns it using a rubric — direct quotes from
+    primary sources score high, inferences score lower, contradicted claims drop further.
+  </p>
+  <div class="conf-legend">
+    <div class="conf-row"><span class="badge badge-very-high">Very high</span><span class="muted">0.90 – 1.00 · Strong source support</span></div>
+    <div class="conf-row"><span class="badge badge-high">High</span><span class="muted">0.75 – 0.89 · Good support, minor uncertainty</span></div>
+    <div class="conf-row"><span class="badge badge-medium">Medium</span><span class="muted">0.55 – 0.74 · Useful but needs review/context</span></div>
+    <div class="conf-row"><span class="badge badge-low">Low</span><span class="muted">0.35 – 0.54 · Weak, incomplete, or inferred</span></div>
+    <div class="conf-row"><span class="badge badge-very-low">Very low</span><span class="muted">0.00 – 0.34 · Speculative or unresolved</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Candidate Operations</h2>
+  <p>A candidate doesn't always propose a new page. It can propose any change to the tree:</p>
+  <div class="ops-table">
+    <div class="op"><span class="badge badge-operation">create</span><p>Add a new page at <code>target_path</code>.</p></div>
+    <div class="op"><span class="badge badge-operation">update</span><p>Replace an existing page with a revised version.</p></div>
+    <div class="op"><span class="badge badge-operation">replace</span><p>Like update, but signals a significant rewrite.</p></div>
+    <div class="op"><span class="badge badge-operation">merge</span><p>Reviewer manually merges this candidate into an existing page.</p></div>
+    <div class="op"><span class="badge badge-operation">archive</span><p>Retire an approved page to <code>.archive/</code>.</p></div>
+    <div class="op"><span class="badge badge-operation">move</span><p>Relocate an approved page to a new path or domain.</p></div>
+    <div class="op"><span class="badge badge-operation">split</span><p>Split one page into several (approve each split separately).</p></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>What Makes 2brain Different</h2>
+  <ul class="checks">
+    <li><strong>Human approval gate.</strong> Nothing lands in the trusted tree without you clicking Approve.</li>
+    <li><strong>Always-visible confidence.</strong> Every page, citation, and search result carries a score.</li>
+    <li><strong>Inline contradictions.</strong> Conflicts live inside the relevant page as <code>[!contradiction]</code> callouts — not in a separate tracker you'll forget to read.</li>
+    <li><strong>Evidence-required claims.</strong> Every Key Claim must cite a source. No evidence-free statements.</li>
+    <li><strong>Multi-domain.</strong> Each domain has its own schema and evolves independently.</li>
+    <li><strong>Git-backed.</strong> Raw sources, candidates, and approved pages are all versioned. No separate history store.</li>
+    <li><strong>Deep research.</strong> Research agents investigate across approved pages, candidates, raw sources — and file their output as a candidate for approval.</li>
+    <li><strong>File-backed agents.</strong> Every agent is a folder under <code>agents/&lt;name&gt;/</code> with its own <code>config.yaml</code>, <code>prompt.md</code>, and <code>seen.json</code> — user-editable from the UI or on disk.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2>A Quick Start</h2>
+  <ol class="numbered">
+    <li><a href="/ingest">Ingest a source</a> — paste an article, fetch a URL, or drop in a GitHub repo. The same tab lists every raw you've ingested.</li>
+    <li><a href="/digest">Digest it</a> — pick a target domain and let Claude draft a candidate page. For backlogs, schedule the <a href="/agents">digestAgent</a> instead.</li>
+    <li><a href="/candidates/{{ domain | default('edge-ai') }}">Review the queue</a> — read each candidate and approve, edit, or reject.</li>
+    <li><a href="/wiki/{{ domain | default('edge-ai') }}">Browse the wiki</a>, <a href="/ask/{{ domain | default('edge-ai') }}">ask a question</a>, or <a href="/query/{{ domain | default('edge-ai') }}">search</a> — approved knowledge compounds over time.</li>
+    <li><a href="/health/{{ domain | default('edge-ai') }}">Run a health check</a> periodically to find drift, orphans, and stale content.</li>
+  </ol>
+</div>
+
+<div class="card" style="background: var(--c-surface-alt);">
+  <h2 style="margin-top: 0;">Rules the Agent Always Follows</h2>
+  <ul class="rules">
+    <li>Never modifies raw sources.</li>
+    <li>Never promotes candidates to approved without human action.</li>
+    <li>Always shows confidence.</li>
+    <li>Always labels candidate content as <code>[CANDIDATE]</code>.</li>
+    <li>Never mixes pages across domains without an explicit move.</li>
+    <li>Reads the domain <code>schema.md</code> before writing any page.</li>
+    <li>Checks for near-duplicates before proposing a new page.</li>
+  </ul>
+</div>
+
+<style>
+.hero { text-align: center; padding: 40px 20px 24px; }
+.hero-mark { font-size: 48px; margin-bottom: 8px; }
+.hero h1 { font-size: 36px; margin-bottom: 8px; }
+.hero-tagline { font-size: 18px; color: var(--c-text-muted); margin-bottom: 14px; }
+
+.pipeline {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
+  gap: 12px;
+  align-items: stretch;
+  margin-top: 20px;
+}
+.pipe-step {
+  background: var(--c-surface-alt);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pipe-n {
+  font-size: 11px;
+  color: var(--c-primary);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.pipe-t { font-weight: 700; font-size: 15px; }
+.pipe-d { font-size: 13px; color: var(--c-text-muted); line-height: 1.4; }
+.pipe-arrow { align-self: center; color: var(--c-text-subtle); font-size: 20px; }
+@media (max-width: 820px) {
+  .pipeline { grid-template-columns: 1fr; }
+  .pipe-arrow { transform: rotate(90deg); justify-self: start; }
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+.feature {
+  padding: 14px 16px;
+  background: var(--c-surface-alt);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  border-left-width: 3px;
+}
+.feature h3 { margin-bottom: 6px; font-size: 15px; }
+.feature p { margin: 0; font-size: 14px; color: var(--c-text-muted); }
+
+/* Tab group accents — mirror the nav palette set in style.css. */
+.feature-read { border-left-color: var(--c-nav-g-read); }
+.feature-pipe { border-left-color: var(--c-nav-g-pipe); }
+.feature-ops  { border-left-color: var(--c-nav-g-ops); }
+.feature-meta { border-left-color: var(--c-nav-g-meta); }
+
+.tab-group-label {
+  margin: 20px 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tab-group-label::after {
+  content: "";
+  flex: 1;
+  height: 2px;
+  background: currentColor;
+  opacity: 0.35;
+  border-radius: 2px;
+}
+.tab-g-read { color: var(--c-nav-g-read); }
+.tab-g-pipe { color: var(--c-nav-g-pipe); }
+.tab-g-ops  { color: var(--c-nav-g-ops); }
+.tab-g-meta { color: var(--c-nav-g-meta); }
+
+.conf-legend { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.conf-row { display: flex; align-items: center; gap: 10px; }
+
+.ops-table {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+.op {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--c-surface-alt);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+}
+.op p { margin: 0; font-size: 13px; color: var(--c-text-muted); }
+
+.checks, .rules { padding-left: 20px; margin-top: 8px; }
+.checks li, .rules li { margin-bottom: 6px; }
+.numbered { padding-left: 22px; margin-top: 8px; }
+.numbered li { margin-bottom: 6px; }
+</style>
+{% endblock %}

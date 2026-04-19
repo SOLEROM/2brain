@@ -114,11 +114,38 @@ Start the web UI (`python -m uvicorn app:app --port 5000` or equivalent), open `
     completed/
     failed/
 
+  agents/
+    <agent_name>/
+      config.yaml            ← agent parameters + schedule + work_scope (user-editable)
+      prompt.md              ← LLM prompt template (user-editable)
+      state.yaml             ← last_run_at / last_status / last_job_id (runner-written)
+      seen.json              ← IDs of items this agent has already processed (runner-written)
+
   audit/
     approvals.log
     ingest.log
     agent-actions.log
 ```
+
+### Agents subsystem
+
+Post-analysis workers whose behaviour is file-backed under `agents/<name>/`:
+
+- `config.yaml` — schedule + per-agent parameters (model, tokens, domain, question, etc.). Unknown keys round-trip through the UI form so manual edits survive.
+- `prompt.md` — the LLM prompt template. Supports `{domain}`, `{now}`, `{candidate_id}` substitutions at run time.
+- `state.yaml` — last-run snapshot (status, duration, outputs, job id). Written atomically by `src/agents/runner.py`.
+
+The registry in `src/agents/registry.py` maps a folder name to a Python run function in `AGENT_RUN_FNS`. Currently registered: **deepSearch** (`src/agents/deep_search.py`) — investigates a research question across the wiki and files a `deep-research-report` candidate for human approval.
+
+A background asyncio task started by `src/web/app.py` (`scheduler_loop` in `src/agents/scheduler.py`) ticks every `TWOBRAIN_SCHEDULER_TICK` seconds (default 60) and runs any agent whose `schedule` (`hourly` / `daily` / `weekly`) has elapsed since `last_run_at`. Set `TWOBRAIN_DISABLE_SCHEDULER=1` in tests or multi-worker deployments to avoid duplicate fires.
+
+Every agent run also produces a job YAML in `jobs/completed/` (or `jobs/failed/`) with `job_type: agent-run`, so the Jobs tab stays the canonical audit surface.
+
+**work_scope** is a uniform config field on every agent (`all` | `new`, default `all`):
+- `all` — the agent processes every relevant item each run.
+- `new` — the agent skips items whose IDs are already in `agents/<name>/seen.json`. The runner hands the agent a `SeenTracker` with the loaded set; the agent calls `seen.mark(...)` on items it consumed; the runner persists the ledger only on successful completion (so failed runs don't poison the set).
+
+Agents decide their own item-ID scheme — `deepSearch` uses the page path so a reprocessed page gets skipped until reset. The Agents tab shows the ledger size and offers a **Reset seen** button to force a full reprocess.
 
 First domain to build: `domains/edge-ai/` (embedded boards, NPUs, perception models, benchmarks, toolchains).
 
@@ -802,3 +829,118 @@ Out of scope for MVP: claim-level database, graph DB, team permissions, real-tim
 ## One-liner
 
 **2brain is a file-based, multi-domain, human-approved AI wiki where raw sources are digested into whole Markdown candidate pages, reviewed through a lightweight web UI, promoted into approved knowledge trees, and continuously improved by deep-research agents with visible confidence and inline contradictions.**
+
+---
+
+## Web UI Reference
+
+The FastAPI app lives in `src/web/`. Routes are grouped under `src/web/routes/`, templates under `src/web/templates/`, static assets under `src/web/static/`.
+
+### Nav & session
+
+- Nav tabs (ordered): **Wiki · Ingest · Digest · Review · Query · Ask · Health · Jobs · Agents · Sources · Config · About**.
+- `/` redirects to `/wiki/<current_domain>`.
+- The **current domain** is resolved from the `2brain-domain` cookie (falling back to `default_domain` in `config/app.yaml`) via a middleware that injects `request.state.current_domain` and `request.state.all_domains` into every request.
+- The top-bar picker writes the cookie and either rewrites path (`/wiki|candidates|query|health`) or reloads the current tab. Per-page forms that used to show a domain dropdown (e.g. Digest) now show a readonly pill referencing the top-bar selector.
+- GUI design patterns and conventions: see `lessons-gui.md`.
+
+### Theme system
+
+- Three themes shipped: `light`, `dark`, `hackers-green` (monospace, bright green on black).
+- CSS variables live under `:root, [data-theme="light"]` and one block per alternate theme. Components never use hard-coded colours.
+- The active theme is applied via `<html data-theme="...">` set by an inline `<script>` in `<head>` **before** the stylesheet loads, so there's no flash on first paint. User choice persists in `localStorage` (`2brain-theme`); server-side default comes from `config/app.yaml → ui.default_theme`.
+- Toggle button in the header cycles through `ui.themes` (configurable list).
+
+### Routes
+
+| Route | Method(s) | Purpose |
+|------|----|---------|
+| `/` | GET | Redirect to `/wiki/<current_domain>` |
+| `/wiki/<domain>` | GET | Browse approved pages — **list / cards / compact** views + **title/date/tag filters** |
+| `/wiki/<domain>/page/<rel_path>` | GET | Render an approved page |
+| `/wiki/<domain>/delete` | POST | Hard-delete an approved page (guards against `index.md`/`log.md`/`schema.md`/`domain.yaml`) |
+| `/ingest` | GET/POST | Add a raw source (URL fetch or pasted text) with tags datalist and Domain Hint |
+| `/digest` | GET/POST | Pick a raw source → candidate page. In-progress jobs shown at the top. Target domain read from cookie (readonly on form). |
+| `/digest/stream?raw_id=&domain=` | GET | SSE progress stream — live per-step events |
+| `/candidates/<domain>` | GET | Review queue (list of pending candidates). Approve button cascades `drop_raw=1` by default. |
+| `/candidates/<domain>/<file>` | GET | Candidate detail w/ markdown rendering, raw-edit panel, Approve/Reject/Delete |
+| `/candidates/<domain>/<file>/{approve\|reject\|edit}` | POST | Actions — Approve accepts `drop_raw` checkbox |
+| `/candidates/<domain>/<bucket>/<file>/delete` | POST | Hard-delete a candidate from pending/rejected/archived |
+| `/query/<domain>?q=` | GET | Keyword search over approved + candidate pages — type/tag/status chips, min-confidence slider, scope toggle |
+| `/ask/<domain>?q=&include_candidates=` | GET | LLM-powered Ask — grounded in approved pages by default; renders the four-section CLAUDE.md answer format with `[APPROVED]`/`[CANDIDATE]` citations |
+| `/health/<domain>` | GET | Runs `lint_domain()` → renders low-confidence/orphans/stale/stuck tiles + regenerates `indexes/*` |
+| `/agents` | GET | Catalogue of registered agents — schedule, last-run timestamp, status badge, Open link |
+| `/agents/<name>` | GET | Agent detail — edit `config.yaml` params (domain, model, schedule, tokens, default question, include_candidates), edit `prompt.md`, manual Run-now, last message + job link |
+| `/agents/<name>/run` | POST | Fire-and-forget manual trigger. Accepts optional `question` form field that overrides `config.yaml → question` |
+| `/agents/<name>/schedule` | POST | Set schedule (`off` / `manual` / `hourly` / `daily` / `weekly`) — writes into `config.yaml` |
+| `/agents/<name>/config` | POST | Save the full config form — round-trips unknown keys |
+| `/agents/<name>/prompt` | POST | Save `prompt.md` |
+| `/agents/<name>/reset-seen` | POST | Clear `agents/<name>/seen.json` so the next `work_scope=new` run reprocesses everything |
+| `/jobs` | GET | All job records grouped by state. Per-row checkboxes + bulk delete + delete-all per state + delete-all-everywhere |
+| `/jobs/<state>/<file>` | GET | Job detail with the full event log (auto-refreshes every 3s while `status=running`; redirects to new location when the job transitions) |
+| `/jobs/<state>/<file>/delete` · `/jobs/bulk-delete` · `/jobs/<state>/delete-all` · `/jobs/delete-all` | POST | Single / multi / per-state / global job cleanup |
+| `/sources` | GET | All ingested raw sources — Read / Digest / Delete per row |
+| `/sources/<raw_id>` | GET | Source content preview + metadata |
+| `/sources/<raw_id>/delete` | POST | Recursively delete `inbox/raw/<raw_id>/` |
+| `/config` | GET/POST | Edit `config/app.yaml` — domain, web UI, theme, source types, suggested tags, digest limits, lint thresholds, audit settings |
+| `/about` | GET | System explainer / onboarding |
+
+### Configuration
+
+All tunable params live in `config/app.yaml`, deep-merged over `DEFAULT_APP_CONFIG` in `src/config.py`. Sections:
+
+```yaml
+default_domain: edge-ai
+web_ui: {host, port, auto_open_browser}
+audit:  {enabled, log_queries}
+source_types:   [url, text, note, pdf, repo, image, video, api]   # ingest dropdown
+suggested_tags: [benchmark, concept, ...]                          # ingest datalist
+digest: {max_source_chars, max_tokens}                             # agent limits
+lint:   {stale_days, stuck_job_minutes, low_confidence_threshold}  # health thresholds
+ui:     {default_theme, themes}                                    # theme selector
+```
+
+Edited from `/config`; saved atomically; unknown keys round-trip.
+
+### Digest pipeline (per-job artifacts)
+
+1. `digest_raw()` writes `jobs/running/<job_id>.yaml` + appends to `jobs/running/<job_id>.events.jsonl` as it emits events.
+2. On success/failure, both files move to `jobs/completed/` or `jobs/failed/` atomically.
+3. The SSE endpoint tees events to the client queue while also writing them to disk, so the full log is inspectable after the stream ends via `/jobs/<state>/<job_id>.yaml`.
+4. Early failures (missing raw source, missing API key, bad agents.yaml) also write a report — every failure is reviewable.
+
+### GitHub ingestion
+
+If the ingested URL matches `https://github.com/<owner>/<repo>` (repo root), the ingester fetches the README via the GitHub API (`/repos/<owner>/<repo>/readme`) with a `Accept: application/vnd.github.raw` header and the top-level repo tree via `/contents/`, then composes the raw source as:
+
+```
+# owner/repo
+Repository: https://github.com/owner/repo
+---
+## README
+...
+---
+## Repository Tree (top level — N entries)
+- 📁 src/
+- 📄 README.md
+- ...
+```
+
+The raw source is auto-tagged `github` + owner, and `source_type=repo`. Blob URLs (`.../blob/<branch>/<path>`) resolve to the raw file content. Non-GitHub URLs use the generic `httpx.get` fallback with `<title>` extraction.
+
+### Approval cascade
+
+Approving a candidate with `candidate_operation ∈ {create, update, replace, merge}` can optionally drop the raw sources it cites. The checkbox is **on by default** on the candidate detail page; quick-approve on the list view includes `drop_raw=1` as a hidden input. Archive/move/split never drop raw (they're not raw-consuming).
+
+### YAML datetime handling
+
+`parse_frontmatter()` runs every loaded frontmatter dict through `coerce_datetimes()` so YAML-parsed `datetime`/`date` values become ISO strings. Required because agents sometimes emit unquoted timestamps (`created_at: 2026-04-17T...`) which YAML turns into `datetime` objects — the rest of the app expects strings (for `fm.created_at[:10]`, etc.).
+
+### Audit trail
+
+Every mutation writes to one of:
+- `audit/approvals.log` — approve / reject / delete / bulk-delete actions
+- `audit/ingest.log` — raw source ingestion + deletion
+- `audit/agent-actions.log` — agent-side operations (reserved)
+
+Plus per-domain `domains/<domain>/log.md` (append-only chronological).

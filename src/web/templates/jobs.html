@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% set nav_active = 'jobs' %}
+{% block title %}Jobs{% endblock %}
+{% block content %}
+<h1>Jobs</h1>
+<p class="page-subtitle">
+  Digest, research, and lint jobs recorded under <code>jobs/</code>.
+</p>
+
+<div class="tiles">
+  {% for state, count in counts.items() %}
+  <div class="tile {% if state == 'failed' and count %}tile-danger{% elif state == 'running' and count %}tile-warn{% elif state == 'completed' %}tile-ok{% endif %}">
+    <div class="n">{{ count }}</div>
+    <div class="l">{{ state }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+{% set total = counts.values() | sum %}
+
+{# One hidden form holds the bulk-action endpoint; checkboxes associate via form="bulk-form". #}
+<form id="bulk-form" method="post" style="display: none;"></form>
+
+{% if total > 0 %}
+<div class="row" style="gap: 12px; margin-bottom: 16px; justify-content: space-between; flex-wrap: wrap;">
+  <div class="row" style="gap: 10px;">
+    <button type="submit" form="bulk-form" formaction="/jobs/bulk-delete"
+            class="btn-danger"
+            onclick="return confirmSelected(this)">
+      Delete selected (<span id="selected-count">0</span>)
+    </button>
+    <button type="button" class="btn-secondary" onclick="toggleAll(true)">Select all</button>
+    <button type="button" class="btn-secondary" onclick="toggleAll(false)">Clear selection</button>
+  </div>
+  <button type="submit" form="bulk-form" formaction="/jobs/delete-all"
+          class="btn-danger"
+          onclick="return confirm('Delete ALL {{ total }} job records (across every state)? This cannot be undone.')">
+    🗑 Delete all jobs ({{ total }})
+  </button>
+</div>
+{% endif %}
+
+{% for state, jobs in buckets.items() %}
+{% if jobs %}
+<div class="card">
+  <div class="row" style="justify-content: space-between; flex-wrap: wrap;">
+    <h3 style="margin: 0; text-transform: capitalize;">
+      {{ state }} <span class="muted" style="font-weight: normal;">({{ jobs|length }})</span>
+    </h3>
+    <button type="submit" form="bulk-form" formaction="/jobs/{{ state }}/delete-all"
+            class="btn-danger"
+            onclick="return confirm('Delete all {{ jobs|length }} {{ state }} job record(s)? This cannot be undone.')">
+      Clear {{ state }}
+    </button>
+  </div>
+  <div class="table-wrap" style="margin-top: 10px;">
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 36px;">
+            <input type="checkbox"
+                   class="select-state"
+                   data-state="{{ state }}"
+                   onclick="toggleState('{{ state }}', this.checked)"
+                   aria-label="Select all in {{ state }}">
+          </th>
+          <th>Job ID</th>
+          <th>Type</th>
+          <th>Domain</th>
+          <th>Input</th>
+          <th>Outputs / Error</th>
+          <th>Timestamp</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for j in jobs %}
+        <tr>
+          <td>
+            <input type="checkbox"
+                   form="bulk-form"
+                   name="item"
+                   class="select-item"
+                   data-state="{{ j._state }}"
+                   value="{{ j._state }}/{{ j._filename }}"
+                   onclick="updateSelectedCount()"
+                   aria-label="Select job {{ j.job_id }}">
+          </td>
+          <td>
+            <a href="/jobs/{{ j._state }}/{{ j._filename }}">
+              <code style="font-size: 11px;">{{ j.job_id }}</code>
+            </a>
+          </td>
+          <td><span class="badge">{{ j.job_type }}</span></td>
+          <td>{{ j.domain }}</td>
+          <td><code style="font-size: 11px;">{{ j.input }}</code></td>
+          <td>
+            {% if j.error %}<span class="badge badge-failed">error</span><div class="subtle">{{ j.error }}</div>
+            {% elif j.outputs %}
+              {% for o in j.outputs %}<div><code style="font-size: 11px;">{{ o }}</code></div>{% endfor %}
+            {% else %}<span class="muted">—</span>{% endif %}
+          </td>
+          <td class="subtle">
+            {{ j.completed_at or j.heartbeat_at or j.started_at or j.created_at or '—' }}
+          </td>
+          <td style="text-align: right;">
+            <form method="post" action="/jobs/{{ j._state }}/{{ j._filename }}/delete" class="inline-form"
+                  onsubmit="return confirm('Delete job record {{ j.job_id }}?');">
+              <button type="submit" class="btn-danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+
+{% if total == 0 %}
+<div class="empty">
+  <p class="muted">No jobs recorded yet.</p>
+</div>
+{% endif %}
+
+<script>
+function allItemBoxes() {
+  return document.querySelectorAll('input.select-item');
+}
+function stateItemBoxes(state) {
+  return document.querySelectorAll('input.select-item[data-state="' + state + '"]');
+}
+function toggleAll(checked) {
+  allItemBoxes().forEach(b => { b.checked = checked; });
+  document.querySelectorAll('input.select-state').forEach(b => { b.checked = checked; });
+  updateSelectedCount();
+}
+function toggleState(state, checked) {
+  stateItemBoxes(state).forEach(b => { b.checked = checked; });
+  updateSelectedCount();
+}
+function updateSelectedCount() {
+  const n = document.querySelectorAll('input.select-item:checked').length;
+  const el = document.getElementById('selected-count');
+  if (el) el.textContent = String(n);
+  // Keep the per-state header checkbox in sync.
+  document.querySelectorAll('input.select-state').forEach(head => {
+    const state = head.dataset.state;
+    const rows = stateItemBoxes(state);
+    const checked = document.querySelectorAll('input.select-item[data-state="' + state + '"]:checked');
+    head.checked = rows.length > 0 && rows.length === checked.length;
+    head.indeterminate = checked.length > 0 && checked.length < rows.length;
+  });
+}
+function confirmSelected(btn) {
+  const n = document.querySelectorAll('input.select-item:checked').length;
+  if (n === 0) { alert('No jobs selected.'); return false; }
+  return confirm('Delete ' + n + ' selected job record' + (n === 1 ? '' : 's') + '?');
+}
+updateSelectedCount();
+</script>
+{% endblock %}

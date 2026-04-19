@@ -44,6 +44,24 @@ def test_page_frontmatter_confidence_bounds():
         )
 
 
+def test_page_frontmatter_coerces_datetime_to_string():
+    """YAML auto-parses unquoted ISO timestamps to datetime; we must accept that."""
+    from datetime import datetime, timezone
+    fm = PageFrontmatter(
+        title="Test Page",
+        domain="edge-ai",
+        type="concept",
+        status="candidate",
+        confidence=0.75,
+        sources=[],
+        created_at=datetime(2026, 4, 17, 21, 36, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 4, 17, 21, 36, 0, tzinfo=timezone.utc),
+        tags=["test"],
+    )
+    assert isinstance(fm.created_at, str)
+    assert fm.created_at.startswith("2026-04-17T21:36:00")
+
+
 def test_page_frontmatter_invalid_status():
     with pytest.raises(Exception):
         PageFrontmatter(

@@ -1,0 +1,12 @@
+last_run_at: '2026-04-18T18:45:19+00:00'
+last_status: ok
+last_duration_s: 0.01
+last_message: Linted 1 domain(s) — low-conf=0 | contradictions=0 | orphans=2 | stale=0
+  | stuck=0
+last_job_id: job_20260418_184519_agent-lintAgent_b4e358fd
+last_outputs:
+- domains/edge-ai/indexes/low-confidence.md
+- domains/edge-ai/indexes/contradictions.md
+- domains/edge-ai/indexes/orphans.md
+- domains/edge-ai/indexes/stale-pages.md
+last_error: null

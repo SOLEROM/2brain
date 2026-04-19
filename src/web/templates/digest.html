@@ -1,41 +1,83 @@
 {% extends "base.html" %}
+{% set nav_active = 'digest' %}
 {% block title %}Digest Source{% endblock %}
 {% block content %}
 <h1>Digest Raw Source</h1>
 <p class="page-subtitle">Select a raw source and target domain. The agent will produce candidate pages for review.</p>
 
 {% if error %}
-<div class="alert alert-error">{{ error }}</div>
+<div class="alert alert-error"><strong>Error:</strong> {{ error }}</div>
+{% endif %}
+
+{% if running_jobs %}
+<div class="card" style="border-color: var(--c-info); border-left: 4px solid var(--c-info);">
+  <h3 style="margin-top: 0;">
+    <span class="badge badge-running">In progress</span>
+    {{ running_jobs|length }} digest job{{ '' if running_jobs|length == 1 else 's' }} running
+  </h3>
+  <div class="table-wrap" style="margin-top: 8px;">
+    <table>
+      <thead>
+        <tr>
+          <th>Job</th>
+          <th>Source</th>
+          <th>Domain</th>
+          <th>Started</th>
+          <th>Last heartbeat</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rj in running_jobs %}
+        <tr>
+          <td><code style="font-size: 11px;">{{ rj.job_id }}</code></td>
+          <td><a href="/sources/{{ rj.input }}"><code style="font-size: 11px;">{{ rj.input }}</code></a></td>
+          <td>{{ rj.domain }}</td>
+          <td class="subtle">{{ rj.started_at[11:19] if rj.started_at else '—' }}</td>
+          <td class="subtle">{{ rj.heartbeat_at[11:19] if rj.heartbeat_at else '—' }}</td>
+          <td style="text-align: right;">
+            <a href="/jobs/running/{{ rj.filename }}" class="btn">📜 View live log</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endif %}
 
 {% if result %}
 <div class="alert alert-success">
-  <strong>Digest complete:</strong> {{ result.raw_id }} → {{ result.domain }}<br>
+  <strong>Digest complete:</strong> <code>{{ result.raw_id }}</code> → <code>{{ result.domain }}</code>
   {% if result.candidates %}
-  <strong>Candidates created ({{ result.candidates|length }}):</strong>
-  <ul style="margin-top:6px">
+  <ul style="margin: 6px 0 0 18px;">
     {% for c in result.candidates %}
     <li><a href="/candidates/{{ result.domain }}/{{ c }}">{{ c }}</a></li>
     {% endfor %}
   </ul>
-  <div style="margin-top:12px">
-    <a href="/candidates/{{ result.domain }}" class="btn-approve">→ Review Queue</a>
+  <div style="margin-top: 12px;">
+    <a href="/candidates/{{ result.domain }}" class="btn">→ Review Queue</a>
   </div>
   {% else %}
-  <span class="muted">No candidates produced — check jobs/failed/ for details.</span>
+  <p class="muted" style="margin-top: 4px;">No candidates produced — <a href="/jobs">check failed jobs</a>.</p>
   {% endif %}
 </div>
 {% endif %}
 
 <div class="card">
-  <form method="post" action="/digest">
+  <form method="post" action="/digest" id="digest-form" data-domain="{{ domain }}">
     <div class="form-group">
-      <label for="domain">Target Domain</label>
-      <select name="domain" id="domain">
-        {% for d in domains %}
-        <option value="{{ d }}" {% if d == domain %}selected{% endif %}>{{ d }}</option>
-        {% endfor %}
-      </select>
+      <label>Target Domain</label>
+      <div class="readonly-domain">
+        <code>{{ domain }}</code>
+        <span class="form-hint">
+          {% if _all_domains and _all_domains|length > 1 %}
+          Change via the Domain picker in the top bar.
+          {% else %}
+          Only domain on this instance.
+          {% endif %}
+        </span>
+      </div>
     </div>
 
     <div class="form-group">
@@ -43,13 +85,13 @@
       {% if sources %}
       <div class="source-list">
         {% for src in sources %}
-        <label class="source-row {% if src.raw_id == selected_raw_id %}selected{% endif %}">
+        <label class="source-row">
           <input type="radio" name="raw_id" value="{{ src.raw_id }}"
             {% if src.raw_id == selected_raw_id %}checked{% elif loop.first and not selected_raw_id %}checked{% endif %}>
           <div class="source-info">
             <span class="source-title">{{ src.title }}</span>
             <span class="source-meta">
-              {{ src.raw_id }}
+              <code>{{ src.raw_id }}</code>
               {% if src.source_type %} · {{ src.source_type }}{% endif %}
               {% if src.domain_hint %} · hint: {{ src.domain_hint }}{% endif %}
               {% if src.ingested_at %} · {{ src.ingested_at[:10] }}{% endif %}
@@ -58,18 +100,205 @@
               {% endif %}
             </span>
           </div>
+          <button type="button" class="btn-danger source-drop"
+                  data-raw-id="{{ src.raw_id }}"
+                  data-title="{{ src.title | e }}"
+                  title="Drop this raw source">
+            Drop
+          </button>
         </label>
         {% endfor %}
       </div>
       {% else %}
-      <p class="muted">No raw sources found. <a href="/ingest">Ingest a source first.</a></p>
+      <div class="empty" style="padding: 20px;">
+        <p class="muted">No raw sources found.</p>
+        <a href="/ingest" class="btn-secondary">Ingest a source first</a>
+      </div>
       {% endif %}
     </div>
 
+    <div class="form-group">
+      <label style="display: flex; align-items: center; gap: 8px; font-weight: 500;">
+        <input type="checkbox" id="verbose-mode" name="verbose" value="1" checked
+               style="width: auto; margin: 0;">
+        Verbose mode <span class="muted" style="font-weight: 400;">— stream each step as it happens</span>
+      </label>
+    </div>
+
     <div class="form-actions">
-      <button type="submit" class="btn-approve" {% if not sources %}disabled{% endif %}>Digest</button>
-      <span class="muted form-hint">This calls the Claude API and may take 10–30 seconds.</span>
+      <button type="submit" class="btn" id="digest-submit" {% if not sources %}disabled{% endif %}>Digest</button>
+      <span class="form-hint">Calls the Claude API — typically 10–30 seconds.</span>
     </div>
   </form>
 </div>
+
+<div class="card" id="digest-stream-panel" style="display: none;">
+  <div class="row" style="justify-content: space-between; margin-bottom: 8px;">
+    <h3 style="margin: 0;">Digest Progress</h3>
+    <span id="digest-status" class="badge badge-running">Starting…</span>
+  </div>
+  <div id="digest-log" class="digest-log"></div>
+  <div id="digest-actions" style="margin-top: 12px; display: none;">
+    <a id="digest-review-link" href="#" class="btn">→ Review Candidate</a>
+    <button type="button" class="btn-secondary" onclick="window.location.reload()">Digest another</button>
+  </div>
+</div>
+
+<script>
+(function() {
+  // "Drop" per-source: delete the raw source folder. We build a transient form
+  // and submit it to the shared /sources/{raw_id}/delete endpoint — can't nest
+  // a <form> inside the digest form, hence the dynamic approach.
+  document.querySelectorAll('.source-drop').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const rawId = btn.dataset.rawId;
+      const title = btn.dataset.title || rawId;
+      if (!confirm('Drop raw source "' + title + '"?\n\nThis permanently deletes ' + rawId + ' from inbox/raw/.')) {
+        return;
+      }
+      const f = document.createElement('form');
+      f.method = 'POST';
+      f.action = '/sources/' + encodeURIComponent(rawId) + '/delete';
+      f.style.display = 'none';
+      document.body.appendChild(f);
+      f.submit();
+    });
+  });
+})();
+(function() {
+  const form = document.getElementById('digest-form');
+  const verboseCheckbox = document.getElementById('verbose-mode');
+  const panel = document.getElementById('digest-stream-panel');
+  const logEl = document.getElementById('digest-log');
+  const statusEl = document.getElementById('digest-status');
+  const actionsEl = document.getElementById('digest-actions');
+  const reviewLink = document.getElementById('digest-review-link');
+  const submitBtn = document.getElementById('digest-submit');
+
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function localTime(iso) {
+    try {
+      const d = new Date(iso);
+      return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    } catch (e) { return iso || ''; }
+  }
+
+  function appendLine(evt) {
+    const line = document.createElement('div');
+    line.className = 'log-line log-' + (evt.level || 'info');
+    const ts = document.createElement('span');
+    ts.className = 'ts';
+    ts.textContent = localTime(evt.ts);
+    const step = document.createElement('span');
+    step.className = 'step';
+    step.textContent = (evt.step || '—') + ':';
+    const msg = document.createElement('span');
+    msg.textContent = evt.message || '';
+    line.appendChild(ts);
+    line.appendChild(step);
+    line.appendChild(msg);
+    if (evt.duplicates && evt.duplicates.length) {
+      const dup = document.createElement('div');
+      dup.className = 'log-trace';
+      dup.textContent = '  ' + evt.duplicates.join('\n  ');
+      line.appendChild(dup);
+    }
+    if (evt.preview) {
+      const pre = document.createElement('div');
+      pre.className = 'log-trace';
+      pre.textContent = evt.preview;
+      line.appendChild(pre);
+    }
+    if (evt.traceback) {
+      const tb = document.createElement('details');
+      const sum = document.createElement('summary');
+      sum.textContent = 'traceback';
+      sum.style.cursor = 'pointer';
+      sum.style.fontSize = '11px';
+      tb.appendChild(sum);
+      const pre = document.createElement('pre');
+      pre.className = 'log-trace';
+      pre.textContent = evt.traceback;
+      tb.appendChild(pre);
+      line.appendChild(tb);
+    }
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = 'badge badge-' + cls;
+  }
+
+  form.addEventListener('submit', function(event) {
+    if (!verboseCheckbox.checked) return;  // fall back to normal POST
+    event.preventDefault();
+
+    const raw_id = (form.querySelector('input[name="raw_id"]:checked') || {}).value;
+    const domain = form.dataset.domain;
+    if (!raw_id) {
+      alert('Pick a raw source first.');
+      return;
+    }
+    if (!domain) {
+      alert('No active domain. Pick one in the top bar.');
+      return;
+    }
+
+    panel.style.display = '';
+    logEl.innerHTML = '';
+    actionsEl.style.display = 'none';
+    setStatus('Running…', 'running');
+    submitBtn.disabled = true;
+
+    const url = '/digest/stream?raw_id=' + encodeURIComponent(raw_id)
+              + '&domain=' + encodeURIComponent(domain);
+    const src = new EventSource(url);
+    let finalCandidate = null;
+    let sawError = false;
+
+    src.onmessage = function(e) {
+      if (!e.data) return;
+      let evt;
+      try { evt = JSON.parse(e.data); } catch (err) { return; }
+      appendLine(evt);
+      if (evt.level === 'error') sawError = true;
+      if (evt.level === 'done' && evt.candidate) {
+        finalCandidate = { candidate: evt.candidate, domain: evt.domain || domain };
+      }
+    };
+
+    src.addEventListener('end', function() {
+      src.close();
+      submitBtn.disabled = false;
+      if (finalCandidate) {
+        setStatus('Done', 'approved');
+        reviewLink.href = '/candidates/' + encodeURIComponent(finalCandidate.domain)
+                         + '/' + encodeURIComponent(finalCandidate.candidate);
+        actionsEl.style.display = '';
+      } else if (sawError) {
+        setStatus('Failed', 'failed');
+      } else {
+        setStatus('Stopped', 'archived');
+      }
+    });
+
+    src.onerror = function() {
+      if (src.readyState === EventSource.CLOSED) return;
+      appendLine({
+        ts: new Date().toISOString(),
+        level: 'error',
+        step: 'stream',
+        message: 'Connection to server lost.',
+      });
+      setStatus('Disconnected', 'failed');
+      submitBtn.disabled = false;
+      src.close();
+    };
+  });
+})();
+</script>
 {% endblock %}

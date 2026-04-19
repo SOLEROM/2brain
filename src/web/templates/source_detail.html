@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% set nav_active = 'sources' %}
+{% block title %}Source: {{ meta.title }}{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+  <a href="/sources">← Raw Sources</a>
+</div>
+
+<div class="row" style="justify-content: space-between;">
+  <div>
+    <h1>{{ meta.title or raw_id }}</h1>
+    <p class="page-subtitle"><code>{{ raw_id }}</code></p>
+  </div>
+  <a href="/digest?raw_id={{ raw_id }}{% if meta.domain_hint %}&amp;domain={{ meta.domain_hint }}{% endif %}" class="btn">→ Digest</a>
+</div>
+
+<div class="review-layout">
+  <div class="review-content">
+    <h3>Source content {% if truncated %}<span class="muted" style="font-weight: normal;">(preview — truncated)</span>{% endif %}</h3>
+    <pre style="max-height: 70vh; overflow-y: auto;">{{ content }}</pre>
+  </div>
+  <aside class="review-sidebar">
+    <h3>Metadata</h3>
+    <dl class="kv">
+      {% if meta.source_type %}<dt>Type</dt><dd>{{ meta.source_type }}</dd>{% endif %}
+      {% if meta.url %}<dt>URL</dt><dd><a href="{{ meta.url }}" rel="noopener" target="_blank">{{ meta.url }}</a></dd>{% endif %}
+      {% if meta.submitted_by %}<dt>By</dt><dd>{{ meta.submitted_by }}</dd>{% endif %}
+      {% if meta.ingested_at %}<dt>Ingested</dt><dd>{{ meta.ingested_at }}</dd>{% endif %}
+      {% if meta.domain_hint %}<dt>Domain hint</dt><dd>{{ meta.domain_hint }}</dd>{% endif %}
+      {% if meta.fetch_status %}<dt>Fetch</dt><dd>{{ meta.fetch_status }}</dd>{% endif %}
+      {% if meta.content_hash %}<dt>Hash</dt><dd><code style="font-size: 11px; word-break: break-all;">{{ meta.content_hash }}</code></dd>{% endif %}
+    </dl>
+    {% if meta.tags %}
+    <h3>Tags</h3>
+    <div>{% for t in meta.tags %}<span class="tag">{{ t }}</span>{% endfor %}</div>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}
