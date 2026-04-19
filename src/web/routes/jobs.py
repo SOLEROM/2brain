@@ -37,29 +37,6 @@ def _load_jobs(repo_root: Path) -> dict[str, list[dict]]:
     return out
 
 
-def _load_raw_sources(repo_root: Path) -> list[dict]:
-    raw_dir = repo_root / "inbox" / "raw"
-    if not raw_dir.exists():
-        return []
-    items = []
-    for entry in sorted(raw_dir.iterdir(), reverse=True):
-        if not entry.is_dir():
-            continue
-        meta = load_yaml(entry / "metadata.yaml")
-        if not meta:
-            continue
-        items.append({
-            "raw_id": entry.name,
-            "title": meta.get("title", entry.name),
-            "source_type": meta.get("source_type", ""),
-            "ingested_at": meta.get("ingested_at", ""),
-            "domain_hint": meta.get("domain_hint", ""),
-            "url": meta.get("url", ""),
-            "fetch_status": meta.get("fetch_status", "ok"),
-        })
-    return items
-
-
 @router.get("/jobs", response_class=HTMLResponse)
 async def jobs_list(request: Request):
     repo_root: Path = request.app.state.repo_root
@@ -71,19 +48,13 @@ async def jobs_list(request: Request):
     })
 
 
-@router.get("/sources", response_class=HTMLResponse)
-async def sources_list(request: Request):
-    repo_root: Path = request.app.state.repo_root
-    templates = request.app.state.templates
-    sources = _load_raw_sources(repo_root)
-    return templates.TemplateResponse(request, "sources.html", {
-        "sources": sources,
-    })
-
-
 @router.post("/sources/{raw_id}/delete")
 async def source_delete(request: Request, raw_id: str):
-    """Hard-delete a raw source folder (inbox/raw/<raw_id>/)."""
+    """Hard-delete a raw source folder (inbox/raw/<raw_id>/).
+
+    Kept under /sources/... because that's the canonical URL for a raw; only
+    the listing moved to /ingest, so post-delete we redirect there.
+    """
     if not _safe_name(raw_id):
         raise HTTPException(status_code=400, detail="Invalid raw_id")
     repo_root: Path = request.app.state.repo_root
@@ -95,7 +66,7 @@ async def source_delete(request: Request, raw_id: str):
         repo_root / "audit" / "ingest.log",
         f"[{now_iso()}] delete-source | {raw_id}",
     )
-    return RedirectResponse("/sources", status_code=303)
+    return RedirectResponse("/ingest", status_code=303)
 
 
 @router.get("/jobs/{state}/{filename}", response_class=HTMLResponse)

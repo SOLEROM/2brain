@@ -195,6 +195,57 @@ pre { padding: 12px; overflow-x: auto; font-size: 13px; }
 .main-nav a:hover { background: var(--c-header-surface); color: var(--c-header-text); text-decoration: none; }
 .main-nav a.active { background: var(--c-header-surface-hover); color: var(--c-header-text); }
 
+/* --- Nav group color coding ---
+   Each tab carries data-g={read|pipe|ops|meta}. A 2px colored underline
+   shows the group at rest; active tabs get a tinted background of the same
+   hue. Hues are defined per theme below. */
+.main-nav a[data-g] {
+  border-bottom: 2px solid transparent;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.main-nav a[data-g="read"] { border-bottom-color: var(--c-nav-g-read); }
+.main-nav a[data-g="pipe"] { border-bottom-color: var(--c-nav-g-pipe); }
+.main-nav a[data-g="ops"]  { border-bottom-color: var(--c-nav-g-ops);  }
+.main-nav a[data-g="meta"] { border-bottom-color: var(--c-nav-g-meta); }
+.main-nav a[data-g="read"].active { background: var(--c-nav-g-read-bg); color: var(--c-header-text); }
+.main-nav a[data-g="pipe"].active { background: var(--c-nav-g-pipe-bg); color: var(--c-header-text); }
+.main-nav a[data-g="ops"].active  { background: var(--c-nav-g-ops-bg);  color: var(--c-header-text); }
+.main-nav a[data-g="meta"].active { background: var(--c-nav-g-meta-bg); color: var(--c-header-text); }
+
+/* Light + dark themes: blue / green / amber / violet */
+:root,
+[data-theme="light"],
+[data-theme="dark"] {
+  --c-nav-g-read: #60a5fa;
+  --c-nav-g-pipe: #34d399;
+  --c-nav-g-ops:  #fbbf24;
+  --c-nav-g-meta: #c084fc;
+  --c-nav-g-read-bg: rgba(96, 165, 250, 0.22);
+  --c-nav-g-pipe-bg: rgba(52, 211, 153, 0.22);
+  --c-nav-g-ops-bg:  rgba(251, 191, 36, 0.22);
+  --c-nav-g-meta-bg: rgba(192, 132, 252, 0.22);
+}
+
+/* Hackers-green: keep in-palette — shades of green/cyan/yellow/lime. */
+[data-theme="hackers-green"] {
+  --c-nav-g-read: #00ffd5;
+  --c-nav-g-pipe: #00ff66;
+  --c-nav-g-ops:  #ffe500;
+  --c-nav-g-meta: #9dff00;
+  --c-nav-g-read-bg: rgba(0, 255, 213, 0.18);
+  --c-nav-g-pipe-bg: rgba(0, 255, 102, 0.18);
+  --c-nav-g-ops-bg:  rgba(255, 229, 0, 0.18);
+  --c-nav-g-meta-bg: rgba(157, 255, 0, 0.18);
+}
+
+.nav-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--c-header-border-subtle);
+  margin: 4px 6px;
+  opacity: 0.6;
+}
+
 .domain-picker { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--c-header-text-muted); }
 .domain-picker select {
   background: var(--c-header-surface);

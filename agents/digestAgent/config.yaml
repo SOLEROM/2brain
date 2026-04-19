@@ -1,7 +1,8 @@
 name: digestAgent
 description: >
-  Auto-digests new raw sources from inbox/raw/ into candidate pages for the
-  configured domain. Uses the raw's metadata.yaml:domain_hint to route.
+  Batch-digests many raw sources at once. Same pipeline as the /digest tab,
+  but walks inbox/raw/ by domain_hint, caps per run, and remembers what it
+  already processed. Use when you have a backlog.
 
 # Recommended: "manual" until you trust the pipeline, then switch to "hourly".
 schedule: manual

@@ -11,9 +11,37 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
 from src.ingest import ingest_source
-from src.web.routes.shared import get_source_types, get_suggested_tags, list_domains
+from src.web.routes.shared import get_source_types, get_suggested_tags, list_domains, load_yaml
 
 router = APIRouter()
+
+
+# -----------------------------------------------------------------------------
+# Raw sources list (merged from the old /sources tab — now shown on /ingest)
+# -----------------------------------------------------------------------------
+
+def _load_raw_sources(repo_root: Path) -> list[dict]:
+    """Return one dict per raw source under inbox/raw/, newest first."""
+    raw_dir = repo_root / "inbox" / "raw"
+    if not raw_dir.exists():
+        return []
+    items: list[dict] = []
+    for entry in sorted(raw_dir.iterdir(), reverse=True):
+        if not entry.is_dir():
+            continue
+        meta = load_yaml(entry / "metadata.yaml")
+        if not meta:
+            continue
+        items.append({
+            "raw_id": entry.name,
+            "title": meta.get("title", entry.name),
+            "source_type": meta.get("source_type", ""),
+            "ingested_at": meta.get("ingested_at", ""),
+            "domain_hint": meta.get("domain_hint", ""),
+            "url": meta.get("url", ""),
+            "fetch_status": meta.get("fetch_status", "ok"),
+        })
+    return items
 
 
 # -----------------------------------------------------------------------------
@@ -332,6 +360,7 @@ def _render(request: Request, *, domain: str, form: Optional[dict] = None,
         "form": form,
         "result": result,
         "error": error,
+        "sources": _load_raw_sources(repo_root),
     })
 
 

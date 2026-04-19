@@ -33,18 +33,20 @@
         <span class="brand-text">2brain</span>
       </a>
       <nav class="main-nav">
-        <a href="/wiki/{{ d }}" class="{% if nav == 'wiki' %}active{% endif %}">Wiki</a>
-        <a href="/ingest" class="{% if nav == 'ingest' %}active{% endif %}">Ingest</a>
-        <a href="/digest" class="{% if nav == 'digest' %}active{% endif %}">Digest</a>
-        <a href="/candidates/{{ d }}" class="{% if nav == 'candidates' %}active{% endif %}">Review</a>
-        <a href="/query/{{ d }}" class="{% if nav == 'query' %}active{% endif %}">Query</a>
-        <a href="/ask/{{ d }}" class="{% if nav == 'ask' %}active{% endif %}">Ask</a>
-        <a href="/health/{{ d }}" class="{% if nav == 'health' %}active{% endif %}">Health</a>
-        <a href="/jobs" class="{% if nav == 'jobs' %}active{% endif %}">Jobs</a>
-        <a href="/agents" class="{% if nav == 'agents' %}active{% endif %}">Agents</a>
-        <a href="/sources" class="{% if nav == 'sources' %}active{% endif %}">Sources</a>
-        <a href="/config" class="{% if nav == 'config' %}active{% endif %}">Config</a>
-        <a href="/about" class="{% if nav == 'about' %}active{% endif %}">About</a>
+        <a href="/wiki/{{ d }}" data-g="read" class="{% if nav == 'wiki' %}active{% endif %}">Wiki</a>
+        <a href="/ask/{{ d }}" data-g="read" class="{% if nav == 'ask' %}active{% endif %}">Ask</a>
+        <a href="/query/{{ d }}" data-g="read" class="{% if nav == 'query' %}active{% endif %}">Query</a>
+        <span class="nav-sep" aria-hidden="true"></span>
+        <a href="/ingest" data-g="pipe" class="{% if nav == 'ingest' %}active{% endif %}">Ingest</a>
+        <a href="/digest" data-g="pipe" class="{% if nav == 'digest' %}active{% endif %}">Digest</a>
+        <a href="/candidates/{{ d }}" data-g="pipe" class="{% if nav == 'candidates' %}active{% endif %}">Review</a>
+        <span class="nav-sep" aria-hidden="true"></span>
+        <a href="/jobs" data-g="ops" class="{% if nav == 'jobs' %}active{% endif %}">Jobs</a>
+        <a href="/health/{{ d }}" data-g="ops" class="{% if nav == 'health' %}active{% endif %}">Health</a>
+        <a href="/config" data-g="ops" class="{% if nav == 'config' %}active{% endif %}">Config</a>
+        <span class="nav-sep" aria-hidden="true"></span>
+        <a href="/agents" data-g="meta" class="{% if nav == 'agents' %}active{% endif %}">Agents</a>
+        <a href="/about" data-g="meta" class="{% if nav == 'about' %}active{% endif %}">About</a>
       </nav>
       {% if _all_domains and _all_domains|length > 1 %}
       <div class="domain-picker">

@@ -38,52 +38,99 @@
 
 <div class="card">
   <h2>What Each Tab Does</h2>
+  <p class="page-subtitle" style="margin-top: -4px;">
+    The nav is organized into four color-coded groups — Read · Pipeline · Ops · Meta.
+    Each group has its own accent hue that matches the tab underline in the header.
+  </p>
+
+  <h3 class="tab-group-label tab-g-read">📘 Read — consume knowledge</h3>
   <div class="feature-grid">
-    <div class="feature">
+    <div class="feature feature-read">
+      <h3>📖 Wiki</h3>
+      <p>Browse approved pages grouped by type (topics, concepts, entities, sources,
+      reports, questions). List / cards / compact views with title, date, and tag filters.
+      Click a page to read it with its metadata sidebar, sources, tags, and review trail.</p>
+    </div>
+    <div class="feature feature-read">
+      <h3>💬 Ask</h3>
+      <p>Grounded LLM chat. Uses <code>ask_llm()</code> to answer a question from the
+      approved wiki (optionally including candidates), structured into the four-section
+      CLAUDE.md format with <code>[APPROVED]</code>/<code>[CANDIDATE]</code> citations.
+      Ephemeral — nothing gets filed.</p>
+    </div>
+    <div class="feature feature-read">
+      <h3>🔍 Query</h3>
+      <p>Keyword search across approved pages <em>and</em> pending candidates. Type/tag/status
+      chips, min-confidence slider, scope toggle. Each result is ranked by title/body/tag hits
+      and labeled with its status badge.</p>
+    </div>
+  </div>
+
+  <h3 class="tab-group-label tab-g-pipe">🛠 Pipeline — build knowledge</h3>
+  <div class="feature-grid">
+    <div class="feature feature-pipe">
       <h3>📥 Ingest</h3>
-      <p>Add a raw source by pasting text or fetching a URL. 2brain saves an immutable
-      copy under <code>inbox/raw/&lt;raw_id&gt;/</code> with metadata (title, URL, content hash,
-      domain hint).</p>
+      <p>Add a raw source by pasting text or fetching a URL (GitHub repo URLs resolve to
+      README + top-level tree). 2brain stores an immutable copy under
+      <code>inbox/raw/&lt;raw_id&gt;/</code> with full metadata. The same tab lists every raw
+      source ever ingested — click in to read it, jump to digesting, or delete.</p>
     </div>
-    <div class="feature">
+    <div class="feature feature-pipe">
       <h3>⚙️ Digest</h3>
-      <p>Pick an ingested source and a target domain. The Claude agent reads the domain's
-      <code>schema.md</code>, checks for near-duplicates, and produces candidate pages with
-      required frontmatter and per-claim evidence.</p>
+      <p>Pick a raw source → the Claude agent reads the domain's <code>schema.md</code>,
+      checks for near-duplicates, and produces candidate pages with required frontmatter and
+      per-claim evidence. For a backlog, use the <strong>digestAgent</strong> on the Agents
+      tab — same pipeline, but batch-drains <code>inbox/raw/</code> by <code>domain_hint</code>
+      with a seen ledger.</p>
     </div>
-    <div class="feature">
+    <div class="feature feature-pipe">
       <h3>✅ Review</h3>
       <p>The queue of pending candidates. Each candidate shows its rendered body, target
       path, confidence, and proposed operation (<em>create / update / replace / merge /
-      archive / move / split</em>). Approve, reject, or edit the raw Markdown.</p>
+      archive / move / split</em>). Approve, reject, or edit the raw Markdown. Approval can
+      cascade-drop the cited raw sources.</p>
     </div>
-    <div class="feature">
-      <h3>📖 Wiki</h3>
-      <p>Browse approved pages grouped by type (topics, concepts, entities, sources,
-      reports, questions). Click a page to read it with its metadata sidebar, sources,
-      tags, and review trail.</p>
+  </div>
+
+  <h3 class="tab-group-label tab-g-ops">🧰 Ops — operate the system</h3>
+  <div class="feature-grid">
+    <div class="feature feature-ops">
+      <h3>🗂️ Jobs</h3>
+      <p>Every digest / research / lint / agent run, recorded in <code>jobs/</code> with full
+      event log. Grouped by state (running / completed / failed) with bulk-delete controls.
+      Auto-refreshes while a job is running.</p>
     </div>
-    <div class="feature">
-      <h3>🔍 Query</h3>
-      <p>Search approved pages <em>and</em> pending candidates in a domain. Results are
-      ranked by title/body/tag hits and labeled with their status badge so you always know
-      what's been approved.</p>
-    </div>
-    <div class="feature">
+    <div class="feature feature-ops">
       <h3>🩺 Health</h3>
       <p>Runs the lint scanner: low-confidence pages, unresolved contradictions, orphans,
       stale pages, stale candidates, stuck jobs, and index mismatches. Regenerates the
-      <code>indexes/</code> files on every run.</p>
+      auto-indexes on every run.</p>
     </div>
-    <div class="feature">
-      <h3>🗂️ Jobs</h3>
-      <p>All digest / research / lint jobs recorded in <code>jobs/</code>. Inspect what ran,
-      what it produced, and what failed — with error messages front and center.</p>
+    <div class="feature feature-ops">
+      <h3>⚙️ Config</h3>
+      <p>Edit <code>config/app.yaml</code> from the browser — domain, source types, suggested
+      tags, digest limits, lint thresholds, theme. Unknown keys round-trip so manual edits
+      survive.</p>
     </div>
-    <div class="feature">
-      <h3>📦 Sources</h3>
-      <p>Every raw source ever ingested. Click in to see the stored content and metadata,
-      or jump straight to digesting it.</p>
+  </div>
+
+  <h3 class="tab-group-label tab-g-meta">🧭 Meta — agents &amp; info</h3>
+  <div class="feature-grid">
+    <div class="feature feature-meta">
+      <h3>🤖 Agents</h3>
+      <p>Registered background agents — each lives in <code>agents/&lt;name&gt;/</code> with
+      its own <code>config.yaml</code>, <code>prompt.md</code>, and <code>seen.json</code>.
+      Currently shipping: <strong>digestAgent</strong> (batch digester),
+      <strong>deepSearch</strong> (files research reports as candidates),
+      <strong>lintAgent</strong>, <strong>conflicAgent</strong>,
+      <strong>sourceDiscovery</strong>. Each can be scheduled
+      (<em>off / manual / hourly / daily / weekly</em>), run on demand, and has its seen
+      ledger reset from the UI.</p>
+    </div>
+    <div class="feature feature-meta">
+      <h3>ℹ️ About</h3>
+      <p>This page — the system explainer, quick start, rules the agent follows, and a
+      reference for candidate operations and confidence scoring.</p>
     </div>
   </div>
 </div>
@@ -128,16 +175,17 @@
     <li><strong>Multi-domain.</strong> Each domain has its own schema and evolves independently.</li>
     <li><strong>Git-backed.</strong> Raw sources, candidates, and approved pages are all versioned. No separate history store.</li>
     <li><strong>Deep research.</strong> Research agents investigate across approved pages, candidates, raw sources — and file their output as a candidate for approval.</li>
+    <li><strong>File-backed agents.</strong> Every agent is a folder under <code>agents/&lt;name&gt;/</code> with its own <code>config.yaml</code>, <code>prompt.md</code>, and <code>seen.json</code> — user-editable from the UI or on disk.</li>
   </ul>
 </div>
 
 <div class="card">
   <h2>A Quick Start</h2>
   <ol class="numbered">
-    <li><a href="/ingest">Ingest a source</a> — paste an article or fetch a URL.</li>
-    <li><a href="/digest">Digest it</a> — pick the target domain and let the agent draft candidate pages.</li>
+    <li><a href="/ingest">Ingest a source</a> — paste an article, fetch a URL, or drop in a GitHub repo. The same tab lists every raw you've ingested.</li>
+    <li><a href="/digest">Digest it</a> — pick a target domain and let Claude draft a candidate page. For backlogs, schedule the <a href="/agents">digestAgent</a> instead.</li>
     <li><a href="/candidates/{{ domain | default('edge-ai') }}">Review the queue</a> — read each candidate and approve, edit, or reject.</li>
-    <li><a href="/wiki/{{ domain | default('edge-ai') }}">Browse the wiki</a> or <a href="/query/{{ domain | default('edge-ai') }}">query it</a> — approved knowledge compounds over time.</li>
+    <li><a href="/wiki/{{ domain | default('edge-ai') }}">Browse the wiki</a>, <a href="/ask/{{ domain | default('edge-ai') }}">ask a question</a>, or <a href="/query/{{ domain | default('edge-ai') }}">search</a> — approved knowledge compounds over time.</li>
     <li><a href="/health/{{ domain | default('edge-ai') }}">Run a health check</a> periodically to find drift, orphans, and stale content.</li>
   </ol>
 </div>
@@ -202,9 +250,39 @@
   background: var(--c-surface-alt);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-md);
+  border-left-width: 3px;
 }
 .feature h3 { margin-bottom: 6px; font-size: 15px; }
 .feature p { margin: 0; font-size: 14px; color: var(--c-text-muted); }
+
+/* Tab group accents — mirror the nav palette set in style.css. */
+.feature-read { border-left-color: var(--c-nav-g-read); }
+.feature-pipe { border-left-color: var(--c-nav-g-pipe); }
+.feature-ops  { border-left-color: var(--c-nav-g-ops); }
+.feature-meta { border-left-color: var(--c-nav-g-meta); }
+
+.tab-group-label {
+  margin: 20px 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tab-group-label::after {
+  content: "";
+  flex: 1;
+  height: 2px;
+  background: currentColor;
+  opacity: 0.35;
+  border-radius: 2px;
+}
+.tab-g-read { color: var(--c-nav-g-read); }
+.tab-g-pipe { color: var(--c-nav-g-pipe); }
+.tab-g-ops  { color: var(--c-nav-g-ops); }
+.tab-g-meta { color: var(--c-nav-g-meta); }
 
 .conf-legend { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .conf-row { display: flex; align-items: center; gap: 10px; }
