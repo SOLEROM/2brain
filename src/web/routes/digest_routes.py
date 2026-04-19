@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import queue
+import shutil
 import threading
 import traceback
 from pathlib import Path
@@ -11,7 +12,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 
 from src.digest import digest_raw
-from src.utils import now_iso
+from src.utils import append_line, now_iso
 from src.validate import parse_frontmatter
 from src.web.routes.shared import list_domains, load_yaml
 
@@ -66,6 +67,19 @@ def _list_raw_sources(repo_root: Path) -> list[dict]:
             "fetch_status": meta.get("fetch_status", ""),
         })
     return sources
+
+
+def _delete_raw_folder(repo_root: Path, raw_id: str) -> bool:
+    """Remove inbox/raw/<raw_id>/ and log it. No-op if already gone."""
+    entry = repo_root / "inbox" / "raw" / raw_id
+    if not entry.is_dir():
+        return False
+    shutil.rmtree(entry)
+    append_line(
+        repo_root / "audit" / "ingest.log",
+        f"[{now_iso()}] delete-source | {raw_id} | after-digest",
+    )
+    return True
 
 
 def _list_running_digests(repo_root: Path) -> list[dict]:
@@ -141,6 +155,7 @@ async def digest_form(request: Request, raw_id: str = "", domain: str = ""):
 async def digest_submit(
     request: Request,
     raw_id: str = Form(...),
+    drop_raw: Optional[str] = Form(default=None),
 ):
     """Non-streaming fallback: runs digest synchronously and renders the page."""
     repo_root: Path = request.app.state.repo_root
@@ -154,27 +169,39 @@ async def digest_submit(
             error="ANTHROPIC_API_KEY is not set — digest requires a Claude API key.",
         )
 
+    want_drop = (drop_raw or "").lower() in ("1", "on", "true", "yes")
     try:
         candidates = await asyncio.to_thread(
             digest_raw, raw_id=raw_id, domain=domain,
             repo_root=repo_root, api_key=api_key,
         )
+        raw_dropped = False
+        if want_drop and candidates:
+            raw_dropped = _delete_raw_folder(repo_root, raw_id)
         return _render(
             request,
             domain=domain,
             selected_raw_id=raw_id,
-            result={"raw_id": raw_id, "domain": domain, "candidates": candidates},
+            result={
+                "raw_id": raw_id, "domain": domain, "candidates": candidates,
+                "raw_dropped": raw_dropped,
+            },
         )
     except Exception as exc:
         return _render(request, domain=domain, selected_raw_id=raw_id, error=str(exc))
 
 
 @router.get("/digest/stream")
-async def digest_stream(request: Request, raw_id: str, domain: str):
+async def digest_stream(
+    request: Request, raw_id: str, domain: str, drop_raw: int = 0,
+):
     """Run digest and stream per-step events as Server-Sent Events.
 
     Each event is a JSON blob with keys ts, level, step, message, plus any
     extras emitted by digest_raw. An SSE `event: end` is sent when done.
+
+    When ``drop_raw=1``, the raw folder is deleted after a successful digest
+    (one that produced at least one candidate). A cleanup event is streamed.
     """
     repo_root: Path = request.app.state.repo_root
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -185,8 +212,9 @@ async def digest_stream(request: Request, raw_id: str, domain: str):
         q.put(evt)
 
     def run() -> None:
+        candidates = None
         try:
-            digest_raw(
+            candidates = digest_raw(
                 raw_id=raw_id, domain=domain,
                 repo_root=repo_root, api_key=api_key,
                 on_event=push,
@@ -199,6 +227,20 @@ async def digest_stream(request: Request, raw_id: str, domain: str):
                 "message": f"{type(exc).__name__}: {exc}",
                 "traceback": traceback.format_exc(),
             })
+        else:
+            if drop_raw and candidates:
+                try:
+                    dropped = _delete_raw_folder(repo_root, raw_id)
+                    if dropped:
+                        push({
+                            "ts": now_iso(), "level": "info", "step": "cleanup",
+                            "message": f"Deleted raw source inbox/raw/{raw_id}/",
+                        })
+                except Exception as exc:
+                    push({
+                        "ts": now_iso(), "level": "warn", "step": "cleanup",
+                        "message": f"Raw delete failed: {type(exc).__name__}: {exc}",
+                    })
         finally:
             q.put(_STREAM_END)
 

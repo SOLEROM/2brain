@@ -11,6 +11,9 @@
   </div>
   {% if pages %}
   <div class="view-toolbar" role="tablist" aria-label="Display mode">
+    <button type="button" class="view-btn" data-view-option="graph" aria-label="Wiki graph view">
+      <span class="vb-icon" aria-hidden="true">◎</span><span class="vb-label">Wiki</span>
+    </button>
     <button type="button" class="view-btn" data-view-option="list" aria-label="List view">
       <span class="vb-icon" aria-hidden="true">☰</span><span class="vb-label">List</span>
     </button>
@@ -106,19 +109,64 @@
   <p class="muted">Adjust or reset the filters to see results.</p>
 </div>
 
+<section id="wiki-graph-section" class="card" style="display: none; padding: 16px;">
+  {% if connections_exists %}
+  <div id="wiki-graph-toolbar" class="row" style="justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; align-items: center;">
+    <div class="muted" style="font-size: 13px;">
+      {{ connections.stats.nodes }} page{{ '' if connections.stats.nodes == 1 else 's' }},
+      {{ connections.stats.edges }} connection{{ '' if connections.stats.edges == 1 else 's' }}
+      {% if connections.stats.broken_wikilinks %}
+      · <span class="subtle">{{ connections.stats.broken_wikilinks }} broken wikilink{{ '' if connections.stats.broken_wikilinks == 1 else 's' }}</span>
+      {% endif %}
+      · generated {{ connections.generated_at[:10] }}
+    </div>
+    <div class="row" style="gap: 6px; flex-wrap: wrap; align-items: center;">
+      <span class="muted" style="font-size: 12px;">edges:</span>
+      <button type="button" class="btn-secondary graph-filter active" data-gfilter="wikilink">wikilink</button>
+      <button type="button" class="btn-secondary graph-filter active" data-gfilter="related">related</button>
+      <button type="button" class="btn-secondary graph-filter active" data-gfilter="shared-source">shared source</button>
+      <button type="button" class="btn-secondary" id="wiki-graph-fit">Fit</button>
+      <a href="/agents/wikiOrder" class="btn-secondary">Rebuild ↻</a>
+    </div>
+  </div>
+  <div id="wiki-graph-canvas" style="width: 100%; height: 70vh; min-height: 480px; border: 1px solid var(--c-border, #ddd); border-radius: 6px; background: var(--c-surface, #fafafa); position: relative;">
+    <div id="wiki-graph-loading" class="muted" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 13px;">Loading graph…</div>
+  </div>
+  <script type="application/json" id="wiki-graph-data">{{ connections | tojson }}</script>
+  {% else %}
+  <div class="empty" style="padding: 32px 16px;">
+    <h3 style="margin: 0 0 6px;">No connection map yet</h3>
+    <p class="muted" style="margin: 0 0 14px;">
+      Run the <code>wikiOrder</code> agent to scan every approved page and build the graph of
+      wikilinks, related_pages, and shared sources.
+    </p>
+    <a href="/agents/wikiOrder" class="btn">Open wikiOrder</a>
+  </div>
+  {% endif %}
+</section>
+
 <script>
 (function() {
   const root = document.getElementById('wiki-root');
+  const graphSection = document.getElementById('wiki-graph-section');
+  const filtersCard = document.querySelector('.wiki-filters');
+  const filterEmpty = document.getElementById('filter-empty');
   const KEY = '2brain-wiki-view';
-  const VALID = ['list', 'cards', 'compact'];
+  const VALID = ['graph', 'list', 'cards', 'compact'];
 
   function setView(mode) {
     if (!VALID.includes(mode)) mode = 'list';
-    root.setAttribute('data-wiki-view', mode);
+    const isGraph = mode === 'graph';
+    if (root) root.setAttribute('data-wiki-view', mode);
+    if (root) root.style.display = isGraph ? 'none' : '';
+    if (filtersCard) filtersCard.style.display = isGraph ? 'none' : '';
+    if (filterEmpty) filterEmpty.style.display = isGraph ? 'none' : filterEmpty.style.display;
+    if (graphSection) graphSection.style.display = isGraph ? '' : 'none';
     document.querySelectorAll('[data-view-option]').forEach(function(b) {
       b.classList.toggle('active', b.dataset.viewOption === mode);
     });
     try { localStorage.setItem(KEY, mode); } catch (e) {}
+    if (isGraph) ensureGraph();
   }
 
   let initial = 'list';
@@ -218,6 +266,174 @@
       activeTags.clear();
       tagButtons.forEach(function(b) { b.classList.remove('active'); });
       applyFilters();
+    });
+  }
+
+  // -----------------------------------------------------------------
+  // Graph view — lazy-load Cytoscape on first switch; render once.
+  // -----------------------------------------------------------------
+  const CYTO_SRC = 'https://cdn.jsdelivr.net/npm/cytoscape@3.28.1/dist/cytoscape.min.js';
+  let cyInstance = null;
+  let cyLoading = null;
+  const edgeFilter = new Set(['wikilink', 'related', 'shared-source']);
+
+  function ensureGraph() {
+    const canvas = document.getElementById('wiki-graph-canvas');
+    const dataEl = document.getElementById('wiki-graph-data');
+    if (!canvas || !dataEl) return;   // empty state, nothing to do
+    if (cyInstance) return;
+    if (cyLoading) return;
+    if (window.cytoscape) { initGraph(); return; }
+    cyLoading = new Promise(function(resolve, reject) {
+      const s = document.createElement('script');
+      s.src = CYTO_SRC;
+      s.async = true;
+      s.onload = function() { resolve(); };
+      s.onerror = function() { reject(new Error('cdn')); };
+      document.head.appendChild(s);
+    }).then(initGraph).catch(function() {
+      const loadingEl = document.getElementById('wiki-graph-loading');
+      if (loadingEl) loadingEl.textContent =
+        'Failed to load graph library from CDN. Check network or switch to List view.';
+    });
+  }
+
+  function readColors() {
+    const css = getComputedStyle(document.documentElement);
+    const v = function(name, fb) { return (css.getPropertyValue(name) || '').trim() || fb; };
+    return {
+      read: v('--c-nav-g-read', '#60a5fa'),
+      pipe: v('--c-nav-g-pipe', '#34d399'),
+      ops:  v('--c-nav-g-ops',  '#fbbf24'),
+      meta: v('--c-nav-g-meta', '#c084fc'),
+      muted: v('--c-muted', '#9aa0a6'),
+      surface: v('--c-surface', '#fafafa'),
+      text: v('--c-text', '#222'),
+    };
+  }
+
+  function colorForType(type, C) {
+    switch (type) {
+      case 'topic': return C.read;
+      case 'concept': return C.pipe;
+      case 'entity': return C.ops;
+      case 'source-summary': return C.meta;
+      case 'comparison':
+      case 'research-report':
+      case 'deep-research-report': return C.meta;
+      case 'question-answer': return C.read;
+      case 'contradiction-note': return C.ops;
+      default: return C.muted;
+    }
+  }
+
+  function initGraph() {
+    const dataEl = document.getElementById('wiki-graph-data');
+    if (!dataEl) return;
+    let data;
+    try { data = JSON.parse(dataEl.textContent || '{}'); } catch (e) { return; }
+    const C = readColors();
+    const nodes = (data.nodes || []).map(function(n) {
+      return { data: {
+        id: n.id, label: n.title, type: n.type || 'other',
+        confidence: n.confidence || 0,
+        color: colorForType(n.type, C),
+      }};
+    });
+    const edges = (data.edges || []).map(function(e, i) {
+      return { data: {
+        id: 'e' + i, source: e.src, target: e.dst,
+        type: e.type, weight: e.weight || 1,
+      }};
+    });
+    const loadingEl = document.getElementById('wiki-graph-loading');
+    if (loadingEl) loadingEl.remove();
+
+    cyInstance = cytoscape({
+      container: document.getElementById('wiki-graph-canvas'),
+      elements: { nodes: nodes, edges: edges },
+      wheelSensitivity: 0.2,
+      style: [
+        { selector: 'node', style: {
+          'background-color': 'data(color)',
+          'label': 'data(label)',
+          'color': C.text,
+          'font-size': '11px',
+          'text-valign': 'bottom',
+          'text-halign': 'center',
+          'text-margin-y': 4,
+          'text-outline-width': 2,
+          'text-outline-color': C.surface,
+          'width': 'mapData(confidence, 0, 1, 16, 42)',
+          'height': 'mapData(confidence, 0, 1, 16, 42)',
+          'border-width': 1,
+          'border-color': C.muted,
+        }},
+        { selector: 'node:selected', style: {
+          'border-width': 3, 'border-color': C.read,
+        }},
+        { selector: 'edge', style: {
+          'curve-style': 'bezier',
+          'width': 'mapData(weight, 1, 5, 1.2, 4)',
+          'opacity': 0.75,
+          'line-color': C.muted,
+          'target-arrow-shape': 'none',
+        }},
+        { selector: 'edge[type="wikilink"]', style: {
+          'line-color': C.read, 'target-arrow-color': C.read,
+          'target-arrow-shape': 'triangle', 'arrow-scale': 0.8,
+        }},
+        { selector: 'edge[type="related"]', style: {
+          'line-color': C.pipe, 'line-style': 'dashed',
+        }},
+        { selector: 'edge[type="shared-source"]', style: {
+          'line-color': C.muted, 'opacity': 0.45,
+        }},
+        { selector: '.dim', style: { 'opacity': 0.1 }},
+      ],
+      layout: {
+        name: 'cose',
+        animate: false,
+        nodeRepulsion: 9000,
+        idealEdgeLength: 90,
+        padding: 20,
+      },
+    });
+
+    cyInstance.on('tap', 'node', function(evt) {
+      const id = evt.target.data('id');
+      if (id) window.location.href = '/wiki/{{ domain }}/page/' + id;
+    });
+
+    applyEdgeFilter();
+  }
+
+  function applyEdgeFilter() {
+    if (!cyInstance) return;
+    cyInstance.edges().forEach(function(e) {
+      const t = e.data('type');
+      e.style('display', edgeFilter.has(t) ? 'element' : 'none');
+    });
+  }
+
+  document.querySelectorAll('.graph-filter').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const t = btn.dataset.gfilter;
+      if (edgeFilter.has(t)) {
+        edgeFilter.delete(t);
+        btn.classList.remove('active');
+      } else {
+        edgeFilter.add(t);
+        btn.classList.add('active');
+      }
+      applyEdgeFilter();
+    });
+  });
+
+  const fitBtn = document.getElementById('wiki-graph-fit');
+  if (fitBtn) {
+    fitBtn.addEventListener('click', function() {
+      if (cyInstance) cyInstance.fit(null, 30);
     });
   }
 })();

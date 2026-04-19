@@ -49,6 +49,7 @@
 {% if result %}
 <div class="alert alert-success">
   <strong>Digest complete:</strong> <code>{{ result.raw_id }}</code> → <code>{{ result.domain }}</code>
+  {% if result.raw_dropped %}<br><span class="muted">Raw source folder deleted. URL kept in history log.</span>{% endif %}
   {% if result.candidates %}
   <ul style="margin: 6px 0 0 18px;">
     {% for c in result.candidates %}
@@ -122,6 +123,15 @@
         <input type="checkbox" id="verbose-mode" name="verbose" value="1" checked
                style="width: auto; margin: 0;">
         Verbose mode <span class="muted" style="font-weight: 400;">— stream each step as it happens</span>
+      </label>
+    </div>
+
+    <div class="form-group">
+      <label style="display: flex; align-items: center; gap: 8px; font-weight: 500;">
+        <input type="checkbox" id="drop-raw" name="drop_raw" value="1" checked
+               style="width: auto; margin: 0;">
+        Delete raw after digest
+        <span class="muted" style="font-weight: 400;">— removes <code>inbox/raw/&lt;id&gt;/</code> on success. URL stays in the history log.</span>
       </label>
     </div>
 
@@ -254,8 +264,10 @@
     setStatus('Running…', 'running');
     submitBtn.disabled = true;
 
+    const dropRaw = (document.getElementById('drop-raw') || {}).checked ? 1 : 0;
     const url = '/digest/stream?raw_id=' + encodeURIComponent(raw_id)
-              + '&domain=' + encodeURIComponent(domain);
+              + '&domain=' + encodeURIComponent(domain)
+              + '&drop_raw=' + dropRaw;
     const src = new EventSource(url);
     let finalCandidate = null;
     let sawError = false;

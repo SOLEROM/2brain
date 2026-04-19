@@ -399,6 +399,8 @@ async def ingest_submit(
     }
 
     try:
+        if not domain_hint or domain_hint not in list_domains(repo_root):
+            raise ValueError("Domain is required — pick a target domain for this source.")
         if actual_url:
             gh = parse_github_url(actual_url)
             if gh is not None:

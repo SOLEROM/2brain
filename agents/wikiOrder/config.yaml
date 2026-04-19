@@ -1,0 +1,17 @@
+name: wikiOrder
+description: >
+  Builds the connection graph across all approved pages in a domain. Scans
+  bodies for [[wikilinks]], the related_pages frontmatter field, and shared
+  raw_ids — writes domains/<d>/indexes/connections.json consumed by the
+  Wiki tab's graph view. Deterministic — no LLM call.
+
+# Re-run cadence. Daily is a sane default; run manually after large batches
+# of approvals.
+schedule: manual
+
+# Accepted to match the runner interface but ignored — the graph is global,
+# every run re-scans the full tree.
+work_scope: all
+
+# Leave blank or set `domains: [a, b]` to map multiple domains per run.
+domain: edge-ai

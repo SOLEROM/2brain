@@ -1,0 +1,8 @@
+last_run_at: '2026-04-19T11:56:43+00:00'
+last_status: ok
+last_duration_s: 0.08
+last_message: Mapped 1 domain(s) — nodes=2 | edges=0 | broken-wikilinks=0
+last_job_id: job_20260419_115643_agent-wikiOrder_c125b906
+last_outputs:
+- domains/edge-ai/indexes/connections.json
+last_error: null

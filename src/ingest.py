@@ -67,4 +67,14 @@ def ingest_source(
     with open(audit_log, "a", encoding="utf-8") as f:
         f.write(entry)
 
+    # URL-history log. Kept separate so it survives raw-folder deletion and
+    # can be exported verbatim as rawlist.txt from the Health tab.
+    if url:
+        rawlist = repo_root / "audit" / "rawlist.log"
+        rawlist.parent.mkdir(parents=True, exist_ok=True)
+        safe_title = (title or "").replace("\t", " ").replace("\n", " ").strip()
+        line = f"{now_iso()}\t{raw_id}\t{url}\t{safe_title}\n"
+        with open(rawlist, "a", encoding="utf-8") as f:
+            f.write(line)
+
     return raw_id

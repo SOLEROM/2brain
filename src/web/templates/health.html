@@ -7,9 +7,15 @@
     <h1>Health Check</h1>
     <p class="page-subtitle">Domain <code>{{ domain }}</code>. Runs the lint scanner and regenerates the index files under <code>indexes/</code>.</p>
   </div>
-  <form method="post" action="/health/{{ domain }}/run">
-    <button type="submit" class="btn">Re-run lint</button>
-  </form>
+  <div class="row" style="gap: 8px; flex-wrap: wrap; align-items: center;">
+    <a href="/export/rawlist.txt" download="rawlist.txt" class="btn-secondary"
+       title="Download every ingested URL as a plain-text list.">
+      Export raw ({{ rawlist_count }})
+    </a>
+    <form method="post" action="/health/{{ domain }}/run" style="margin: 0;">
+      <button type="submit" class="btn">Re-run lint</button>
+    </form>
+  </div>
 </div>
 
 <div class="tiles">

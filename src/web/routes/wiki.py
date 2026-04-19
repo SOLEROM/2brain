@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import markdown
@@ -50,12 +51,27 @@ async def wiki_browse(request: Request, domain: str):
             pages.append(entry)
             by_type.setdefault(entry["type"] or "other", []).append(entry)
 
+    connections = _load_connections(domain_dir)
+
     return templates.TemplateResponse(request, "wiki_browse.html", {
         "domain": domain,
         "pages": pages,
         "by_type": by_type,
         "all_tags": sorted(all_tags),
+        "connections": connections,
+        "connections_exists": connections is not None,
     })
+
+
+def _load_connections(domain_dir: Path) -> dict | None:
+    """Return the wikiOrder-generated graph, or None if not yet generated."""
+    path = domain_dir / "indexes" / "connections.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 @router.get("/wiki/{domain}/page/{rel_path:path}", response_class=HTMLResponse)
