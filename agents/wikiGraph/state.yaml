@@ -1,8 +1,8 @@
-last_run_at: '2026-04-19T12:34:11+00:00'
+last_run_at: '2026-04-19T14:25:36+00:00'
 last_status: ok
-last_duration_s: 0.01
-last_message: Mapped 1 domain(s) — nodes=2 | edges=0 | broken-wikilinks=0
-last_job_id: job_20260419_123411_agent-wikiOrder_0712a389
+last_duration_s: 0.0
+last_message: Mapped 1 domain(s) — nodes=3 | edges=0 | broken-wikilinks=0
+last_job_id: job_20260419_142536_agent-wikiGraph_c06fe81d
 last_outputs:
-- domains/edge-ai/indexes/connections.json
+- domains/agents/indexes/connections.json
 last_error: null

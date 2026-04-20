@@ -1,4 +1,5 @@
 .env
+todo
 
 # Private data — raw sources, candidates, approved wiki, jobs, audit logs
 inbox/

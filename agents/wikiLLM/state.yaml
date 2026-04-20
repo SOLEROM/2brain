@@ -1,0 +1,8 @@
+last_run_at: '2026-04-19T14:23:58+00:00'
+last_status: ok
+last_duration_s: 23.98
+last_message: Rewrote 1 index(es) — tokens 1622→1262
+last_job_id: job_20260419_142358_agent-wikiLLM_a353f470
+last_outputs:
+- domains/agents/index.md
+last_error: null
