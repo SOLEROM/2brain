@@ -338,7 +338,18 @@ async def _fetch_url(url: str) -> tuple[str, str]:
             )
 
     def _do_fetch() -> str:
-        resp = httpx.get(url, follow_redirects=True, timeout=30)
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept": (
+                "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                "image/avif,image/webp,*/*;q=0.8"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        resp = httpx.get(url, follow_redirects=True, timeout=30, headers=headers)
         resp.raise_for_status()
         return resp.text
 
